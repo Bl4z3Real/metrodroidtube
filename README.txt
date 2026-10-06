@@ -11,3 +11,9 @@ Pubblicazione per tutti (GitHub Releases)
 3. NON mettere la tua chiave API nel codice o nei secret: l'APK pubblico non la contiene.
    Ogni utente inserisce la propria chiave gratuita in Settings > API key (al primo avvio l'app lo chiede).
 4. Il workflow "Build APK" (tab Actions > Run workflow) serve solo per prove: scarica l'artifact MetroTube-debug-apk.
+
+Login Google (iscrizioni, feed, like, commenti)
+1. Google Cloud Console: abilita "YouTube Data API v3"; schermata di consenso OAuth; Credenziali > ID client OAuth > tipo "TV e dispositivi con input limitato".
+2. Inserisci ID e secret in Settings > OAuth client dell'app, oppure (per la release pubblica) nei secret del repository OAUTH_CLIENT_ID e OAUTH_CLIENT_SECRET.
+3. Con la schermata di consenso in modalità "Test" possono accedere solo gli utenti di test (max 100); per tutti serve la verifica di Google.
+Nota: YouTube non offre via API la cronologia di visione né "Guarda più tardi": restano salvate sul dispositivo.
