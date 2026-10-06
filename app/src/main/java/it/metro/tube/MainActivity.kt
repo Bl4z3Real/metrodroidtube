@@ -8,6 +8,7 @@ import android.text.Html
 import android.text.TextUtils
 import android.text.format.DateUtils
 import android.content.Intent
+import android.net.Uri
 import android.provider.MediaStore
 import android.util.LruCache
 import android.view.*
@@ -41,16 +42,20 @@ class MainActivity : Activity() {
     private val key: String
         get() = prefs.getString("key", "")!!.ifEmpty { API_KEY }
 
+    private val chOf = HashMap<String, String>()
     private lateinit var content: FrameLayout
     private lateinit var drawer: LinearLayout
     private lateinit var logoBox: FrameLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+    private val fText by lazy { resources.getFont(R.font.segoe_wp_light) }
+    private val fSym by lazy { resources.getFont(R.font.seguisym) }
     private fun tv(t: String, size: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
         text = t; textSize = size; setTextColor(color)
-        typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.BOLD) else Typeface.create("sans-serif-light", Typeface.NORMAL)
+        typeface = if (bold) Typeface.create(fText, Typeface.BOLD) else fText
     }
+    private fun sym(t: String, size: Float, color: Int) = TextView(this).apply { text = t; textSize = size; setTextColor(color); typeface = fSym }
     private fun get(url: String, cb: (JSONObject?) -> Unit) = thread {
         val r = try { JSONObject(URL(url).readText()) } catch (e: Exception) { null }
         ui.post { cb(r) }
@@ -64,6 +69,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        Icon.font = fText
         window.statusBarColor = DARK; window.navigationBarColor = DARK
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
         root.addView(topBar(), LinearLayout.LayoutParams(-1, dp(56)))
@@ -97,7 +103,7 @@ class MainActivity : Activity() {
     }
     private fun openSearch() {
         val e = EditText(this).apply {
-            hint = "Search"; setTextColor(Color.WHITE); setHintTextColor(0xFF888888.toInt()); setSingleLine()
+            hint = "Search"; typeface = fText; setTextColor(Color.WHITE); setHintTextColor(0xFF888888.toInt()); setSingleLine()
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             setOnEditorActionListener { v, _, _ ->
                 val q = v.text.toString().trim()
@@ -120,7 +126,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams(dp(50), dp(50)).apply { setMargins(dp(10), 0, dp(10), 0) })
         }
         b.addView(mid, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
-        b.addView(tv("•••", 18f, Color.WHITE, true).apply { setPadding(dp(8), dp(4), dp(14), dp(8)); setOnClickListener { settings() } },
+        b.addView(sym("•••", 18f, Color.WHITE).apply { setPadding(dp(8), dp(4), dp(14), dp(8)); setOnClickListener { settings() } },
             FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP))
         return b
     }
@@ -166,16 +172,29 @@ class MainActivity : Activity() {
 
     private fun drawerView(): LinearLayout {
         val d = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(0xFF222222.toInt()) }
-        val items = listOf("Home" to null, "Trending" to "", "Music" to "10", "Entertainment" to "24", "Sports" to "17", "Comedy" to "23", "Film & Animation" to "1", "Gaming" to "20")
-        d.addView(tv("Sign in", 17f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setBackgroundColor(0xFF6B8FE6.toInt()); setOnClickListener { Toast.makeText(this@MainActivity, "Sign-in not available yet", Toast.LENGTH_SHORT).show() } }, LinearLayout.LayoutParams(-1, dp(52)).apply { setMargins(dp(14), dp(14), dp(14), 0) })
-        d.addView(tv("BEST OF YOUTUBE", 12f, 0xFF888888.toInt(), true).apply { setPadding(dp(16), dp(18), 0, dp(8)) })
-        items.forEach { (n, c) ->
-            d.addView(tv(n, 19f, 0xFFCCCCCC.toInt(), true).apply {
-                setPadding(dp(20), dp(15), 0, dp(15))
-                setOnClickListener { toggleDrawer(); if (c == null) home() else cat(n, c.ifEmpty { null }) }
-            })
+        val grey = 0xFF999999.toInt()
+        d.addView(tv("Sign in", 17f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setBackgroundColor(0xFF6B8FE6.toInt()); setOnClickListener { Toast.makeText(this@MainActivity, "Sign-in not available yet", Toast.LENGTH_SHORT).show() } },
+            LinearLayout.LayoutParams(-1, dp(52)).apply { setMargins(dp(14), dp(14), dp(14), 0) })
+        fun head(t: String) = d.addView(tv(t, 12f, 0xFF888888.toInt(), true).apply { setPadding(dp(16), dp(18), 0, dp(6)) })
+        fun item(name: String, res: Int, glyph: String, go: () -> Unit) {
+            val r = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(18), dp(12), dp(8), dp(12)); tilt(this); setOnClickListener { toggleDrawer(); go() } }
+            if (res != 0) r.addView(ImageView(this).apply { setImageResource(res); setColorFilter(grey) }, LinearLayout.LayoutParams(dp(26), dp(26)))
+            else r.addView(sym(glyph, 20f, grey).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(26), dp(26)))
+            r.addView(tv(name, 19f, 0xFFCCCCCC.toInt(), true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(16) })
+            d.addView(r)
         }
-        d.addView(tv("Settings", 19f, 0xFFCCCCCC.toInt(), true).apply { setPadding(dp(20), dp(15), 0, dp(15)); setOnClickListener { toggleDrawer(); settings() } })
+        head("ACTIVITY"); item("Home", 0, "\u2302") { home() }
+        item("History", 0, "\u21BA") { localList("History", "history") }
+        item("Watch later", 0, "\u2606") { localList("Watch later", "later") }
+        head("BEST OF YOUTUBE")
+        item("Trending", 0, "\u2197") { cat("Trending", null) }
+        item("Music", R.drawable.d_music, "") { cat("Music", "10") }
+        item("Entertainment", R.drawable.d_entertainment, "") { cat("Entertainment", "24") }
+        item("Sports", R.drawable.d_sports, "") { cat("Sports", "17") }
+        item("Comedy", R.drawable.d_comedy, "") { cat("Comedy", "23") }
+        item("Film & Animation", R.drawable.d_film, "") { cat("Film & Animation", "1") }
+        item("Gaming", R.drawable.d_games, "") { cat("Gaming", "20") }
+        item("Settings", R.drawable.ic_manage, "") { settings() }
         return d
     }
     private fun toggleDrawer() {
@@ -208,9 +227,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL; setBackgroundColor(DARK); setPadding(dp(18), dp(14), dp(18), dp(14))
             addView(tv(title, 22f, Color.WHITE, true)); addView(tv(sub, 15f, 0xFFCCCCCC.toInt()))
         })
+        show(sv, push)
+        fill(col, url, featured)
+    }
+    private fun fill(col: LinearLayout, url: String, featured: Boolean) {
         val status = tv("Loading…", 16f, 0xFF555555.toInt()).apply { setPadding(dp(18), dp(18), 0, 0) }
         col.addView(status)
-        show(sv, push)
         get(url) { j ->
             val arr = j?.optJSONArray("items")
             if (arr == null) {
@@ -224,10 +246,12 @@ class MainActivity : Activity() {
             col.removeView(status)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i); val sn = o.getJSONObject("snippet")
-                val idv = o.get("id"); val id = if (idv is JSONObject) idv.optString("videoId") else idv.toString()
+                val idv = o.get("id"); val id = sn.optJSONObject("resourceId")?.optString("videoId") ?: if (idv is JSONObject) idv.optString("videoId") else idv.toString()
                 if (id.isEmpty()) continue
                 val views = o.optJSONObject("statistics")?.optString("viewCount")?.toLongOrNull()?.let { "%,d views".format(it) }
-                val t = Html.fromHtml(sn.getString("title"), 0).toString(); val ch = sn.getString("channelTitle")
+                val t = Html.fromHtml(sn.getString("title"), 0).toString(); val ch = sn.optString("videoOwnerChannelTitle").ifEmpty { sn.optString("channelTitle") }
+                if (t == "Private video" || t == "Deleted video") continue
+                chOf[id] = sn.optString("videoOwnerChannelId").ifEmpty { sn.optString("channelId") }
                 val dur = o.optJSONObject("contentDetails")?.optString("duration")?.let { fmt(it) } ?: ""
                 col.addView(if (i == 0 && featured) banner(id, t, ch, views, dur) else row(id, t, ch, views, dur),
                     LinearLayout.LayoutParams(-1, -2).apply { if (!(i == 0 && featured)) topMargin = dp(4) })
@@ -236,7 +260,7 @@ class MainActivity : Activity() {
     }
     private fun banner(id: String, t: String, ch: String, v: String?, d: String): View {
         val f = FrameLayout(this)
-        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.video_preview) }
         f.addView(iv, FrameLayout.LayoutParams(-1, dp(210))); load(iv, "https://i.ytimg.com/vi/$id/hqdefault.jpg")
         f.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(40), dp(14), dp(12))
@@ -250,7 +274,7 @@ class MainActivity : Activity() {
     }
     private fun row(id: String, t: String, ch: String, v: String?, d: String = ""): View {
         val r = LinearLayout(this).apply { setBackgroundColor(Color.WHITE) }
-        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.video_preview) }
         val th = FrameLayout(this); th.addView(iv, FrameLayout.LayoutParams(-1, -1)); load(iv, "https://i.ytimg.com/vi/$id/mqdefault.jpg")
         if (d.isNotEmpty()) th.addView(badge(d), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(6), dp(6)) })
         r.addView(th, LinearLayout.LayoutParams(dp(150), dp(84)))
@@ -264,6 +288,7 @@ class MainActivity : Activity() {
     }
 
     private fun player(id: String, title: String, ch: String, views: String?) {
+        addSaved("history", id, title, ch)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val web = WebView(this).apply {
             setBackgroundColor(Color.BLACK); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.mediaPlaybackRequiresUserGesture = false
@@ -281,6 +306,7 @@ class MainActivity : Activity() {
                 tilt(this)
                 setOnClickListener {
                     if (k == 6) startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$id"), null))
+                    else if (k == 9) { addSaved("later", id, title, ch); Toast.makeText(this@MainActivity, "Added to Watch later", Toast.LENGTH_SHORT).show() }
                     else Toast.makeText(this@MainActivity, "Sign in to use this", Toast.LENGTH_SHORT).show()
                 }
             }, LinearLayout.LayoutParams(0, dp(52), 1f))
@@ -288,7 +314,7 @@ class MainActivity : Activity() {
         col.addView(bar, LinearLayout.LayoutParams(-1, dp(52)))
         col.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
-            addView(tv(title, 19f, 0xFF222222.toInt(), true)); addView(tv("By $ch", 15f, BLUE, true))
+            addView(tv(title, 19f, 0xFF222222.toInt(), true)); addView(tv("By $ch", 15f, BLUE, true).apply { setOnClickListener { chOf[id]?.takeIf { it.isNotEmpty() }?.let { channel(it) } } })
             views?.let { addView(tv(it, 15f, 0xFF444444.toInt())) }
         })
         val tabs = LinearLayout(this); val sv = ScrollView(this); val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -306,7 +332,7 @@ class MainActivity : Activity() {
                 val a = j?.optJSONArray("items") ?: return@get
                 for (i in 0 until a.length()) {
                     val o = a.getJSONObject(i); val sn = o.getJSONObject("snippet"); val vid = o.getJSONObject("id").optString("videoId")
-                    if (vid.isNotEmpty() && vid != id) body.addView(row(vid, Html.fromHtml(sn.getString("title"), 0).toString(), sn.getString("channelTitle"), null),
+                    chOf[vid] = sn.optString("channelId"); if (vid.isNotEmpty() && vid != id) body.addView(row(vid, Html.fromHtml(sn.getString("title"), 0).toString(), sn.getString("channelTitle"), null),
                         LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
                 }
             }
@@ -321,14 +347,17 @@ class MainActivity : Activity() {
                     val c = a.getJSONObject(i).getJSONObject("snippet").getJSONObject("topLevelComment").getJSONObject("snippet")
                     body.addView(LinearLayout(this).apply {
                         setPadding(dp(14), dp(10), dp(14), dp(10))
-                        val av = ImageView(this@MainActivity).apply { setBackgroundColor(0xFFA9BCE8.toInt()); scaleType = ImageView.ScaleType.CENTER_CROP }
+                        val av = ImageView(this@MainActivity).apply { setImageResource(R.drawable.user_preview); scaleType = ImageView.ScaleType.CENTER_CROP }
                         addView(av, LinearLayout.LayoutParams(dp(46), dp(46)))
                         c.optString("authorProfileImageUrl").takeIf { it.startsWith("http") }?.let { load(av, it) }
                         addView(LinearLayout(this@MainActivity).apply {
                             orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0)
                             addView(LinearLayout(this@MainActivity).apply {
-                                addView(tv(c.getString("authorDisplayName"), 16f, BLUE, true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
-                                addView(tv("👍 ${c.optInt("likeCount")}", 14f, 0xFF2E9E2E.toInt()))
+                                addView(tv(c.getString("authorDisplayName"), 16f, BLUE, true).apply {
+                                    maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                                    setOnClickListener { c.optJSONObject("authorChannelId")?.optString("value")?.takeIf { it.isNotEmpty() }?.let { channel(it) } }
+                                }, LinearLayout.LayoutParams(0, -2, 1f))
+                                addView(sym("👍 ${c.optInt("likeCount")}", 14f, 0xFF2E9E2E.toInt()))
                             })
                             addView(tv(ago(c.optString("publishedAt")), 13f, 0xFF777777.toInt()))
                             addView(tv(Html.fromHtml(c.getString("textDisplay"), 0).toString(), 16f, 0xFF222222.toInt()))
@@ -348,6 +377,100 @@ class MainActivity : Activity() {
             .setView(e)
             .setPositiveButton("Save") { _, _ -> prefs.edit().putString("key", e.text.toString().trim()).apply(); done() }
             .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
+    private fun saved(name: String) = try { org.json.JSONArray(prefs.getString(name, "[]")) } catch (e: Exception) { org.json.JSONArray() }
+    private fun addSaved(name: String, id: String, t: String, ch: String) {
+        val old = saved(name); val n = org.json.JSONArray()
+        n.put(JSONObject().put("id", id).put("t", t).put("c", ch).put("h", chOf[id] ?: ""))
+        for (i in 0 until old.length()) { val o = old.getJSONObject(i); if (o.getString("id") != id && n.length() < 100) n.put(o) }
+        prefs.edit().putString(name, n.toString()).apply()
+    }
+    private fun localList(title: String, name: String) {
+        val sv = ScrollView(this); val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; sv.addView(col)
+        val head = LinearLayout(this).apply { setBackgroundColor(DARK); setPadding(dp(18), dp(14), dp(18), dp(14)); gravity = Gravity.CENTER_VERTICAL }
+        head.addView(tv(title, 22f, Color.WHITE, true), lp(0, -2, 1f))
+        head.addView(tv("Clear", 16f, 0xFFCCCCCC.toInt()).apply { setOnClickListener { prefs.edit().remove(name).apply(); stack.removeAt(stack.size - 1); localList(title, name) } })
+        col.addView(head)
+        val a = saved(name)
+        if (a.length() == 0) {
+            col.addView(ImageView(this).apply { setImageResource(R.drawable.no_video) }, lp(dp(100), dp(100)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(40) })
+            col.addView(tv("Nothing here yet", 18f, 0xFF555555.toInt()).apply { gravity = Gravity.CENTER }, lp(-1, -2).apply { topMargin = dp(10) })
+        }
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i); chOf[o.getString("id")] = o.optString("h")
+            col.addView(row(o.getString("id"), o.getString("t"), o.getString("c"), null), lp(-1, -2).apply { topMargin = dp(4) })
+        }
+        show(sv)
+    }
+
+    private fun playlists(col: LinearLayout, cid: String) {
+        get("${base}playlists?part=snippet,contentDetails&maxResults=25&channelId=$cid&key=$key") { j ->
+            val a = j?.optJSONArray("items")
+            if (a == null || a.length() == 0) { col.addView(tv("No playlists", 16f, 0xFF555555.toInt()).apply { setPadding(dp(16), dp(14), 0, 0) }); return@get }
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i); val sn = o.getJSONObject("snippet"); val pid = o.getString("id"); val t = sn.getString("title")
+                val n = o.getJSONObject("contentDetails").optInt("itemCount")
+                val r = LinearLayout(this).apply { setBackgroundColor(Color.WHITE) }
+                val iv = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.video_preview) }
+                r.addView(iv, lp(dp(150), dp(84)))
+                sn.optJSONObject("thumbnails")?.optJSONObject("medium")?.optString("url")?.let { load(iv, it) }
+                val c = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(4), dp(8), 0) }
+                c.addView(tv(t, 15f, 0xFF222222.toInt(), true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+                c.addView(tv("$n videos", 13f, 0xFF777777.toInt()))
+                r.addView(c, lp(0, -2, 1f)); tilt(r)
+                r.setOnClickListener { list(t, "$n videos", "${base}playlistItems?part=snippet&maxResults=50&playlistId=$pid&key=$key", false) }
+                col.addView(r, lp(-1, -2).apply { topMargin = dp(4) })
+            }
+        }
+    }
+
+    private fun channel(cid: String) {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; val sv = ScrollView(this); sv.addView(col)
+        val banner = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF9E1F1B.toInt()) }
+        col.addView(banner, lp(-1, dp(80)))
+        val head = LinearLayout(this).apply { setBackgroundColor(DARK); setPadding(dp(16), dp(14), dp(16), dp(14)); gravity = Gravity.CENTER_VERTICAL }
+        val av = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.user_preview) }
+        head.addView(av, lp(dp(84), dp(84)))
+        val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, 0, 0) }
+        val name = tv("…", 22f, Color.WHITE, true)
+        val subs = tv("", 14f, 0xFF555555.toInt()).apply { setBackgroundColor(0xFFECF0EC.toInt()); setPadding(dp(10), dp(8), dp(10), dp(8)); visibility = View.GONE }
+        val sb = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; tilt(this)
+            setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/channel/$cid"))) } }
+        sb.addView(sym("▶", 14f, Color.WHITE).apply { gravity = Gravity.CENTER; setBackgroundColor(RED) }, lp(dp(40), dp(38)))
+        sb.addView(tv("Subscribe", 16f, 0xFF222222.toInt(), true).apply { gravity = Gravity.CENTER; setBackgroundColor(0xFFECECEC.toInt()); setPadding(dp(16), 0, dp(16), 0) }, lp(-2, dp(38)))
+        sb.addView(subs, lp(-2, dp(38)).apply { marginStart = dp(8) })
+        info.addView(name); info.addView(sb, lp(-2, -2).apply { topMargin = dp(8) })
+        head.addView(info, lp(0, -2, 1f)); col.addView(head)
+        var uploads = ""; var about = ""
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val tabs = LinearLayout(this)
+        val tvs = listOf("Videos", "Playlists", "About").map { n ->
+            tv(n, 16f, 0xFF999999.toInt()).apply { gravity = Gravity.CENTER; background = GradientDrawable().apply { setColor(Color.WHITE); setStroke(dp(2), Color.BLACK) } }
+        }
+        fun pick(i: Int) {
+            tvs.forEach { it.setTextColor(0xFF999999.toInt()) }; tvs[i].setTextColor(0xFF111111.toInt()); body.removeAllViews()
+            if (i == 0) { if (uploads.isNotEmpty()) fill(body, "${base}playlistItems?part=snippet&maxResults=30&playlistId=$uploads&key=$key", false) }
+            else if (i == 1) playlists(body, cid)
+            else body.addView(tv(about, 16f, 0xFF333333.toInt()).apply { setPadding(dp(16), dp(14), dp(16), dp(14)) })
+        }
+        tvs.forEachIndexed { i, t -> tabs.addView(t, lp(0, dp(46), 1f)); t.setOnClickListener { pick(i) } }
+        col.addView(tabs); col.addView(body)
+        show(sv)
+        get("${base}channels?part=snippet,statistics,contentDetails,brandingSettings&id=$cid&key=$key") { j ->
+            val ch = j?.optJSONArray("items")?.optJSONObject(0) ?: run { name.text = "Channel unavailable"; return@get }
+            val sn = ch.getJSONObject("snippet"); val st = ch.optJSONObject("statistics")
+            name.text = sn.getString("title")
+            sn.optJSONObject("thumbnails")?.let { th -> (th.optJSONObject("medium") ?: th.optJSONObject("default"))?.optString("url")?.let { load(av, it) } }
+            ch.optJSONObject("brandingSettings")?.optJSONObject("image")?.optString("bannerExternalUrl")?.takeIf { it.startsWith("http") }?.let { load(banner, "$it=w1060") }
+            if (st != null && !st.optBoolean("hiddenSubscriberCount")) st.optString("subscriberCount").toLongOrNull()?.let { subs.text = "%,d".format(it); subs.visibility = View.VISIBLE }
+            uploads = ch.optJSONObject("contentDetails")?.optJSONObject("relatedPlaylists")?.optString("uploads") ?: ""
+            about = sn.optString("description").ifEmpty { "No description." } + "\n\n" +
+                "%,d views".format(st?.optString("viewCount")?.toLongOrNull() ?: 0L) + "\n" +
+                "%,d videos".format(st?.optString("videoCount")?.toLongOrNull() ?: 0L) + "\nJoined " + sn.optString("publishedAt").take(10)
+            pick(0)
+        }
     }
 
     private fun settings() {
@@ -370,7 +493,17 @@ class MainActivity : Activity() {
 }
 
 class Icon(ctx: android.content.Context, private val k: Int, private val col: Int = Color.WHITE) : View(ctx) {
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    companion object { var font: Typeface? = null }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private val bm: Bitmap? = when (k) {
+        4 -> R.drawable.ic_music; 5 -> R.drawable.ic_upload; 6 -> R.drawable.ic_share; 9 -> R.drawable.ic_add; else -> 0
+    }.let { if (it != 0) BitmapFactory.decodeResource(ctx.resources, it) else null }
+    private fun g(c: Canvas, cx: Float, cy: Float, size: Float) {
+        val b = bm ?: return
+        p.colorFilter = PorterDuffColorFilter(col, PorterDuff.Mode.SRC_IN)
+        c.drawBitmap(b, null, RectF(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2), p)
+        p.colorFilter = null
+    }
     override fun onDraw(c: Canvas) {
         val u = minOf(width, height) / 100f; val cx = width / 2f; val cy = height / 2f
         p.color = col; p.strokeCap = Paint.Cap.ROUND; p.strokeWidth = 7 * u; p.style = Paint.Style.FILL
@@ -378,29 +511,20 @@ class Icon(ctx: android.content.Context, private val k: Int, private val col: In
         when (k) {
             0 -> for (i in -1..1) c.drawRect(cx - 32 * u, cy + i * 24 * u - 5 * u, cx + 32 * u, cy + i * 24 * u + 5 * u, p)
             1 -> { p.style = Paint.Style.STROKE; c.drawCircle(cx - 6 * u, cy - 6 * u, 22 * u, p); c.drawLine(cx + 10 * u, cy + 10 * u, cx + 34 * u, cy + 34 * u, p) }
-            2 -> { ring(); p.textSize = 26 * u; p.textAlign = Paint.Align.CENTER; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("You", cx, cy + 9 * u, p) }
+            2 -> { ring(); p.textSize = 26 * u; p.textAlign = Paint.Align.CENTER; p.typeface = font ?: Typeface.DEFAULT_BOLD; p.isFakeBoldText = true; c.drawText("You", cx, cy + 9 * u, p) }
             3 -> {
                 ring(); for (i in 0..2) c.drawRect(cx - 24 * u + i * 18 * u, cy + 20 * u - (10 + i * 12) * u, cx - 14 * u + i * 18 * u, cy + 20 * u, p)
                 p.style = Paint.Style.STROKE; c.drawLine(cx - 26 * u, cy - 4 * u, cx + 24 * u, cy - 26 * u, p)
             }
-            4 -> {
-                ring(); p.style = Paint.Style.STROKE; c.drawArc(cx - 22 * u, cy - 26 * u, cx + 22 * u, cy + 14 * u, 180f, 180f, false, p); p.style = Paint.Style.FILL
-                c.drawRoundRect(cx - 28 * u, cy - 2 * u, cx - 16 * u, cy + 22 * u, 4 * u, 4 * u, p); c.drawRoundRect(cx + 16 * u, cy - 2 * u, cx + 28 * u, cy + 22 * u, 4 * u, 4 * u, p)
-            }
-            5 -> {
-                ring(); c.drawRoundRect(cx - 28 * u, cy - 16 * u, cx + 8 * u, cy + 16 * u, 6 * u, 6 * u, p)
-                val t = Path().apply { moveTo(cx + 12 * u, cy); lineTo(cx + 30 * u, cy - 14 * u); lineTo(cx + 30 * u, cy + 14 * u); close() }; c.drawPath(t, p)
-            }
-            6 -> {
-                p.strokeWidth = 5 * u; c.drawLine(cx - 20 * u, cy, cx + 18 * u, cy - 20 * u, p); c.drawLine(cx - 20 * u, cy, cx + 18 * u, cy + 20 * u, p)
-                for ((x, y) in listOf(cx - 22 * u to cy, cx + 20 * u to cy - 22 * u, cx + 20 * u to cy + 22 * u)) c.drawCircle(x, y, 9 * u, p)
-            }
+            4 -> { ring(); g(c, cx, cy, 56 * u) }
+            5 -> { ring(); g(c, cx, cy, 52 * u) }
+            6 -> g(c, cx, cy, 72 * u)
             7, 8 -> {
                 if (k == 8) c.rotate(180f, cx, cy)
                 c.drawRect(cx - 36 * u, cy - 4 * u, cx - 22 * u, cy + 34 * u, p); c.drawRoundRect(cx - 18 * u, cy - 8 * u, cx + 34 * u, cy + 34 * u, 8 * u, 8 * u, p)
                 c.drawRoundRect(cx - 8 * u, cy - 36 * u, cx + 8 * u, cy - 2 * u, 8 * u, 8 * u, p)
             }
-            9 -> { p.strokeWidth = 9 * u; c.drawLine(cx - 24 * u, cy, cx + 24 * u, cy, p); c.drawLine(cx, cy - 24 * u, cx, cy + 24 * u, p) }
+            9 -> g(c, cx, cy, 52 * u)
         }
     }
 }
