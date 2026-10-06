@@ -19,6 +19,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
+      # Opzionale: client OAuth (non è un segreto per le app installate) da Settings > Secrets
+      - name: Imposta il client OAuth
+        env:
+          CID: ${{ secrets.OAUTH_CLIENT_ID }}
+          CSEC: ${{ secrets.OAUTH_CLIENT_SECRET }}
+        run: |
+          if [ -n "$CID" ]; then
+            sed -i "s/INSERISCI_CLIENT_ID/$CID/; s/INSERISCI_CLIENT_SECRET/$CSEC/" app/src/main/java/it/metro/tube/MainActivity.kt
+          fi
       - run: gradle assembleDebug --no-daemon
       - run: cp app/build/outputs/apk/debug/app-debug.apk MetroTube-${{ github.ref_name }}.apk
       - uses: softprops/action-gh-release@v2
