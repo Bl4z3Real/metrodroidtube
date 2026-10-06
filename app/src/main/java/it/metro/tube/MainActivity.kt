@@ -8,6 +8,7 @@ import android.text.Html
 import android.text.TextUtils
 import android.text.format.DateUtils
 import android.content.Intent
+import android.provider.MediaStore
 import android.util.LruCache
 import android.view.*
 import android.view.inputmethod.EditorInfo
@@ -112,13 +113,33 @@ class MainActivity : Activity() {
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(e, 0)
     }
     private fun bottomBar(): View {
-        val b = LinearLayout(this).apply { setBackgroundColor(DARK); gravity = Gravity.CENTER_VERTICAL }
-        listOf(2 to { home() }, 3 to { cat("Trending", null) }, 4 to { cat("Music", "10") }, 5 to { cat("Gaming", "20") }).forEach { (k, a) ->
-            b.addView(Icon(this, k).apply { tilt(this); setOnClickListener { a() } }, LinearLayout.LayoutParams(dp(50), dp(50)).apply { marginStart = dp(20) })
+        val b = FrameLayout(this).apply { setBackgroundColor(DARK) }
+        val mid = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        listOf(2 to { home() }, 3 to { cat("Trending", null) }, 4 to { cat("Music", "10") }, 5 to { uploadMenu() }).forEach { (k, a) ->
+            mid.addView(Icon(this, k).apply { tilt(this); setOnClickListener { a() } },
+                LinearLayout.LayoutParams(dp(50), dp(50)).apply { setMargins(dp(10), 0, dp(10), 0) })
         }
-        b.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        b.addView(tv("•••", 18f, Color.WHITE, true).apply { setPadding(dp(8), 0, dp(18), dp(18)); setOnClickListener { settings() } })
+        b.addView(mid, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
+        b.addView(tv("•••", 18f, Color.WHITE, true).apply { setPadding(dp(8), dp(4), dp(14), dp(8)); setOnClickListener { settings() } },
+            FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP))
         return b
+    }
+    private fun uploadMenu() {
+        android.app.AlertDialog.Builder(this).setTitle("Upload a video")
+            .setItems(arrayOf("Record a video", "Choose from gallery")) { _, w ->
+                if (w == 0) startActivityForResult(Intent(MediaStore.ACTION_VIDEO_CAPTURE), 11)
+                else startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("video/*"), 12)
+            }.show()
+    }
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(rc: Int, res: Int, d: Intent?) {
+        super.onActivityResult(rc, res, d)
+        val uri = d?.data
+        if ((rc == 11 || rc == 12) && res == RESULT_OK && uri != null) {
+            val send = Intent(Intent.ACTION_SEND).setType("video/*").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            try { startActivity(Intent(send).setPackage("com.google.android.youtube")) }
+            catch (e: Exception) { startActivity(Intent.createChooser(send, "Upload with…")) }
+        }
     }
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun tilt(v: View) {
@@ -245,10 +266,10 @@ class MainActivity : Activity() {
     private fun player(id: String, title: String, ch: String, views: String?) {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val web = WebView(this).apply {
-            setBackgroundColor(Color.BLACK); settings.javaScriptEnabled = true; settings.mediaPlaybackRequiresUserGesture = false
+            setBackgroundColor(Color.BLACK); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.mediaPlaybackRequiresUserGesture = false
             webChromeClient = android.webkit.WebChromeClient()
-            loadDataWithBaseURL("https://www.youtube.com",
-                "<body style='margin:0;background:#000'><iframe width='100%' height='100%' src='https://www.youtube.com/embed/$id?playsinline=1&autoplay=1' frameborder='0' allow='autoplay;fullscreen' allowfullscreen></iframe></body>",
+            loadDataWithBaseURL("https://it.metro.tube/",
+                "<body style='margin:0;background:#000'><iframe width='100%' height='100%' src='https://www.youtube.com/embed/$id?playsinline=1&autoplay=1&rel=0&origin=https://it.metro.tube' referrerpolicy='strict-origin-when-cross-origin' frameborder='0' allow='autoplay;fullscreen;encrypted-media' allowfullscreen></iframe></body>",
                 "text/html", "utf-8", null)
         }
         col.addView(web, LinearLayout.LayoutParams(-1, dp(220)))
