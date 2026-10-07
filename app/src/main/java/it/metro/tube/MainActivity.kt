@@ -30,7 +30,9 @@ const val OAUTH_ID = "INSERISCI_CLIENT_ID"
 const val OAUTH_SECRET = "INSERISCI_CLIENT_SECRET"
 
 class MainActivity : Activity() {
-    private val DARK = 0xFF1B1B1B.toInt(); private val BG = 0xFFEDF1EE.toInt()
+    private val DARK = 0xFF222421.toInt(); private val BG = 0xFFEFF3EF.toInt()
+    private val TOPC = 0xFF1A1C19.toInt(); private val BOTC = 0xFF202020.toInt(); private val DRAW = 0xFF212021.toInt()
+    private fun grad(top: Int, bot: Int, r: Int = 0) = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(top, bot)).apply { cornerRadius = dp(r).toFloat() }
     private val BLUE = 0xFF0B58A6.toInt(); private val RED = 0xFFC4302B.toInt()
     private val base = "https://www.googleapis.com/youtube/v3/"
     private val regions = listOf("IT", "US", "GB", "DE", "FR", "ES", "CA", "BR")
@@ -91,6 +93,8 @@ class MainActivity : Activity() {
     private lateinit var content: FrameLayout
     private lateinit var drawer: ScrollView
     private lateinit var drawerList: LinearLayout
+    private lateinit var main: LinearLayout
+    private lateinit var scrim: View
     private lateinit var topV: View
     private lateinit var botV: View
     private lateinit var logoBox: FrameLayout
@@ -118,17 +122,20 @@ class MainActivity : Activity() {
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
         Icon.font = fText
-        window.statusBarColor = DARK; window.navigationBarColor = DARK
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
-        topV = topBar(); root.addView(topV, LinearLayout.LayoutParams(-1, dp(56)))
-        val mid = FrameLayout(this)
-        content = FrameLayout(this)
-        mid.addView(content, FrameLayout.LayoutParams(-1, -1))
+        window.statusBarColor = TOPC; window.navigationBarColor = BOTC
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(DRAW) }
+        val stage = FrameLayout(this)
         drawerList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        drawer = ScrollView(this).apply { setBackgroundColor(0xFF222222.toInt()); visibility = View.GONE; addView(drawerList) }
+        drawer = ScrollView(this).apply { setBackgroundColor(DRAW); visibility = View.GONE; addView(drawerList) }
         fillDrawer()
-        mid.addView(drawer, FrameLayout.LayoutParams(dp(280), -1))
-        root.addView(mid, LinearLayout.LayoutParams(-1, 0, 1f))
+        stage.addView(drawer, FrameLayout.LayoutParams(dp(280), -1))
+        main = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BG) }
+        topV = topBar(); main.addView(topV, LinearLayout.LayoutParams(-1, dp(56)))
+        content = FrameLayout(this); main.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        stage.addView(main, FrameLayout.LayoutParams(-1, -1))
+        scrim = View(this).apply { visibility = View.GONE; setOnClickListener { toggleDrawer() } }
+        stage.addView(scrim, FrameLayout.LayoutParams(dp(60), -1, Gravity.END))
+        root.addView(stage, LinearLayout.LayoutParams(-1, 0, 1f))
         botV = bottomBar(); root.addView(botV, LinearLayout.LayoutParams(-1, dp(64)))
         setContentView(root)
         if (signedIn) refreshAccount()
@@ -140,11 +147,12 @@ class MainActivity : Activity() {
         setImageResource(R.drawable.logo_color); scaleType = ImageView.ScaleType.FIT_CENTER; setPadding(0, dp(13), 0, dp(13))
     }
     private fun topBar(): View {
-        val b = FrameLayout(this).apply { setBackgroundColor(DARK) }
+        val b = FrameLayout(this).apply { setBackgroundColor(TOPC) }
         b.addView(Icon(this, 0).apply { tilt(this); setOnClickListener { toggleDrawer() } }, FrameLayout.LayoutParams(dp(56), -1, Gravity.START))
         logoBox = FrameLayout(this).also { it.addView(logo()) }
         b.addView(logoBox, FrameLayout.LayoutParams(-1, -1).apply { marginStart = dp(64); marginEnd = dp(64) })
         b.addView(Icon(this, 1).apply { tilt(this); setOnClickListener { openSearch() } }, FrameLayout.LayoutParams(dp(56), -1, Gravity.END))
+        b.addView(View(this).apply { setBackgroundColor(0xFF323232.toInt()) }, FrameLayout.LayoutParams(-1, dp(1), Gravity.BOTTOM))
         return b
     }
     private fun openSearch() {
@@ -165,7 +173,7 @@ class MainActivity : Activity() {
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(e, 0)
     }
     private fun bottomBar(): View {
-        val b = FrameLayout(this).apply { setBackgroundColor(DARK) }
+        val b = FrameLayout(this).apply { setBackgroundColor(BOTC) }
         val mid = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         listOf(2 to { home() }, 3 to { cat("Trending", null) }, 4 to { cat("Music", "10") }, 5 to { uploadMenu() }).forEach { (k, a) ->
             mid.addView(Icon(this, k).apply { tilt(this); setOnClickListener { a() } },
@@ -217,24 +225,30 @@ class MainActivity : Activity() {
     } catch (e: Exception) { "" }
 
     private fun fillDrawer() {
-        val d = drawerList; d.removeAllViews(); val grey = 0xFF999999.toInt()
+        val d = drawerList; d.removeAllViews(); val grey = 0xFF9A9A9A.toInt()
+        fun line() {
+            d.addView(View(this).apply { setBackgroundColor(0xFF191819.toInt()) }, lp(-1, dp(1)))
+            d.addView(View(this).apply { setBackgroundColor(0xFF313131.toInt()) }, lp(-1, dp(1)))
+        }
         if (signedIn && meName.isNotEmpty()) {
-            val r = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(14), dp(14), dp(4)) }
+            val r = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(12), dp(12), dp(8)) }
             val av = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.user_preview) }
-            r.addView(av, lp(dp(52), dp(52))); if (meAvatar.isNotEmpty()) load(av, meAvatar)
+            r.addView(av, lp(dp(48), dp(48))); if (meAvatar.isNotEmpty()) load(av, meAvatar)
             val c = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
-            c.addView(tv(meName, 18f, Color.WHITE, true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+            c.addView(tv(meName, 17f, Color.WHITE, true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
             c.addView(tv("Sign out", 14f, 0xFF8FB0FF.toInt()).apply { setPadding(0, dp(4), 0, dp(4)); setOnClickListener { toggleDrawer(); signOut() } })
             r.addView(c, lp(0, -2, 1f)); d.addView(r)
-        } else d.addView(tv("Sign in", 17f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setBackgroundColor(0xFF6B8FE6.toInt()); tilt(this); setOnClickListener { toggleDrawer(); signIn() } },
-            lp(-1, dp(52)).apply { setMargins(dp(14), dp(14), dp(14), 0) })
-        fun head(t: String) = d.addView(tv(t, 12f, 0xFF888888.toInt(), true).apply { setPadding(dp(16), dp(18), 0, dp(6)) })
+        } else d.addView(tv("Sign in", 16f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; tilt(this); setOnClickListener { toggleDrawer(); signIn() }
+            background = GradientDrawable().apply { setColor(0xFF6B92E6.toInt()); setStroke(dp(1), 0xFF3F62B8.toInt()) }
+        }, lp(-1, dp(44)).apply { setMargins(dp(8), dp(10), dp(8), dp(6)) })
+        fun head(t: String) { d.addView(tv(t, 12f, 0xFF8A8A8A.toInt(), true).apply { setPadding(dp(14), dp(12), 0, dp(8)) }); line() }
         fun item(name: String, res: Int, kind: Int, go: () -> Unit) {
-            val r = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(18), dp(12), dp(8), dp(12)); tilt(this); setOnClickListener { toggleDrawer(); go() } }
-            if (res != 0) r.addView(ImageView(this).apply { setImageResource(res); setColorFilter(grey) }, lp(dp(26), dp(26)))
-            else r.addView(Icon(this, kind, grey), lp(dp(26), dp(26)))
-            r.addView(tv(name, 19f, 0xFFCCCCCC.toInt(), true), lp(-2, -2).apply { marginStart = dp(16) })
-            d.addView(r)
+            val r = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(18), 0, dp(8), 0); tilt(this); setOnClickListener { toggleDrawer(); go() } }
+            if (res != 0) r.addView(ImageView(this).apply { setImageResource(res); setColorFilter(grey) }, lp(dp(24), dp(24)))
+            else r.addView(Icon(this, kind, grey), lp(dp(24), dp(24)))
+            r.addView(tv(name, 17f, 0xFFBDBDBD.toInt(), true), lp(-2, -2).apply { marginStart = dp(16) })
+            d.addView(r, lp(-1, dp(60))); line()
         }
         head("ACTIVITY")
         item("Home", 0, 10) { home() }
@@ -255,11 +269,17 @@ class MainActivity : Activity() {
         item("Film & Animation", R.drawable.d_film, 0) { cat("Film & Animation", "1") }
         item("Gaming", R.drawable.d_games, 0) { cat("Gaming", "20") }
         item("Settings", R.drawable.ic_manage, 0) { settings() }
-        d.addView(View(this), lp(1, dp(16)))
     }
+    private fun drawerW() = minOf((resources.displayMetrics.widthPixels * 0.75f).toInt(), dp(320))
     private fun toggleDrawer() {
-        drawer.visibility = if (drawer.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        drawer.translationX = -dp(280).toFloat(); drawer.animate().translationX(0f).setDuration(180).start()
+        if (drawer.visibility != View.VISIBLE) {
+            drawer.layoutParams = FrameLayout.LayoutParams(drawerW(), -1); drawer.visibility = View.VISIBLE
+            scrim.layoutParams = FrameLayout.LayoutParams(resources.displayMetrics.widthPixels - drawerW(), -1, Gravity.END); scrim.visibility = View.VISIBLE
+            main.animate().translationX(drawerW().toFloat()).setDuration(220).start()
+        } else {
+            scrim.visibility = View.GONE
+            main.animate().translationX(0f).setDuration(220).withEndAction { drawer.visibility = View.GONE }.start()
+        }
     }
 
     // ---------- Schermate ----------
@@ -272,7 +292,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             fsView != null -> chrome.onHideCustomView()
-            drawer.visibility == View.VISIBLE -> drawer.visibility = View.GONE
+            drawer.visibility == View.VISIBLE -> toggleDrawer()
             stack.size > 1 -> { val r = stack.removeAt(stack.size - 1); if (r === playerCol) stopPlayer(); content.removeAllViews(); content.addView(stack.last()); applyLayout() }
             else -> super.onBackPressed()
         }
@@ -384,20 +404,27 @@ class MainActivity : Activity() {
                 "text/html", "utf-8", null)
         }
         col.addView(web, LinearLayout.LayoutParams(-1, dp(220)))
-        val bar = LinearLayout(this).apply { setBackgroundColor(0xFF4A4A4A.toInt()); gravity = Gravity.CENTER_VERTICAL }
-        bar.addView(tv("HQ", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; background = GradientDrawable().apply { setColor(RED); cornerRadius = dp(3).toFloat() } },
+        val bar = LinearLayout(this).apply { background = grad(0xFF515151.toInt(), 0xFF424242.toInt()); gravity = Gravity.CENTER_VERTICAL }
+        bar.addView(tv("HQ", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; background = grad(0xFFCB3A2F.toInt(), 0xFFA32A21.toInt(), 3) },
             LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(dp(14), 0, dp(14), 0) })
-        listOf(7, 8, 9, 6).forEach { k ->
-            bar.addView(Icon(this, k, 0xFFDDDDDD.toInt()).apply {
-                tilt(this)
-                setOnClickListener {
-                    if (k == 6) startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$id"), null))
-                    else if (k == 9) plusMenu(id, title, ch)
-                    else if (!signedIn) { toast("Sign in to rate videos"); signIn() }
-                    else api("${base}videos/rate?id=$id&rating=${if (k == 7) "like" else "dislike"}", "POST") { c, _ -> toast(if (c in 200..299) (if (k == 7) "Liked" else "Disliked") else "Could not rate") }
-                }
-            }, LinearLayout.LayoutParams(0, dp(52), 1f))
+        val off = 0xFFB4B4B4.toInt(); var rating = "none"
+        val likeI = Icon(this, 7, off); val dislikeI = Icon(this, 8, off)
+        fun paint() { likeI.setActive(rating == "like"); dislikeI.setActive(rating == "dislike") }
+        fun rate(r: String) {
+            if (!signedIn) { toast("Sign in to rate videos"); signIn(); return }
+            val old = rating; val nw = if (old == r) "none" else r
+            rating = nw; paint()
+            api("${base}videos/rate?id=$id&rating=$nw", "POST") { c, _ -> if (c !in 200..299) { rating = old; paint(); toast("Could not rate") } }
         }
+        likeI.apply { tilt(this); setOnClickListener { rate("like") } }
+        dislikeI.apply { tilt(this); setOnClickListener { rate("dislike") } }
+        val plusI = Icon(this, 9, 0xFFDDDDDD.toInt()).apply { tilt(this); setOnClickListener { plusMenu(id, title, ch) } }
+        val shareI = Icon(this, 6, 0xFFDDDDDD.toInt()).apply {
+            tilt(this)
+            setOnClickListener { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$id"), null)) }
+        }
+        for (v in listOf(likeI, dislikeI, plusI, shareI)) bar.addView(v, LinearLayout.LayoutParams(0, dp(52), 1f))
+        if (signedIn) getA("${base}videos/getRating?id=$id") { j -> rating = j?.optJSONArray("items")?.optJSONObject(0)?.optString("rating") ?: "none"; paint() }
         col.addView(bar, LinearLayout.LayoutParams(-1, dp(52)))
         col.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -692,16 +719,19 @@ class MainActivity : Activity() {
 
     private fun channel(cid: String) {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; val sv = ScrollView(this); sv.addView(col)
-        val banner = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF9E1F1B.toInt()) }
+        val banner = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = grad(0xFFA81F27.toInt(), 0xFF741319.toInt()) }
         col.addView(banner, lp(-1, dp(80)))
         val head = LinearLayout(this).apply { setBackgroundColor(DARK); setPadding(dp(16), dp(14), dp(16), dp(14)); gravity = Gravity.CENTER_VERTICAL }
         val av = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.user_preview) }
         head.addView(av, lp(dp(84), dp(84)))
         val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, 0, 0) }
         val name = tv("…", 22f, Color.WHITE, true)
-        val subs = tv("", 14f, 0xFF555555.toInt()).apply { setBackgroundColor(0xFFECF0EC.toInt()); setPadding(dp(10), dp(8), dp(10), dp(8)); visibility = View.GONE }
+        val subs = tv("", 14f, 0xFF777777.toInt()).apply { background = grad(Color.WHITE, 0xFFF1F1F1.toInt(), 4); setPadding(dp(12), 0, dp(12), 0); gravity = Gravity.CENTER }
+        val subTail = Icon(this, 15)
+        val subsBox = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
+        subsBox.addView(subTail, lp(dp(8), dp(16))); subsBox.addView(subs, lp(-2, dp(38)))
         var subId = ""
-        val subLbl = tv("Subscribe", 16f, 0xFF222222.toInt(), true).apply { gravity = Gravity.CENTER; setBackgroundColor(0xFFECECEC.toInt()); setPadding(dp(16), 0, dp(16), 0) }
+        val subLbl = tv("Subscribe", 16f, 0xFF222222.toInt(), true).apply { gravity = Gravity.CENTER; background = grad(0xFFF6F6F6.toInt(), 0xFFE2E2E2.toInt(), 3); setPadding(dp(16), 0, dp(16), 0) }
         val sb = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; tilt(this)
             setOnClickListener {
                 if (!signedIn) signIn()
@@ -710,10 +740,11 @@ class MainActivity : Activity() {
                 }
                 else api("${base}subscriptions?id=$subId", "DELETE") { c, _ -> if (c in 200..299) { subId = ""; subLbl.text = "Subscribe" } else toast("Could not unsubscribe") }
             } }
-        sb.addView(sym("▶", 14f, Color.WHITE).apply { gravity = Gravity.CENTER; setBackgroundColor(RED) }, lp(dp(40), dp(38)))
+        val subRed = FrameLayout(this).apply { background = grad(0xFFB84731.toInt(), 0xFF8E2B1A.toInt(), 3) }
+        subRed.addView(Icon(this, 14), FrameLayout.LayoutParams(-1, -1)); sb.addView(subRed, lp(dp(44), dp(38)))
         sb.addView(subLbl, lp(-2, dp(38)))
-        sb.addView(subs, lp(-2, dp(38)).apply { marginStart = dp(8) })
-        if (signedIn) getA("${base}subscriptions?part=id&mine=true&forChannelId=$cid") { j ->
+        sb.addView(subsBox, lp(-2, dp(38)).apply { marginStart = dp(8) })
+        if (signedIn && cid != meId) getA("${base}subscriptions?part=id&mine=true&forChannelId=$cid") { j ->
             j?.optJSONArray("items")?.optJSONObject(0)?.optString("id")?.let { if (it.isNotEmpty()) { subId = it; subLbl.text = "Subscribed" } }
         }
         info.addView(name); info.addView(sb, lp(-2, -2).apply { topMargin = dp(8) })
@@ -737,9 +768,10 @@ class MainActivity : Activity() {
             val ch = j?.optJSONArray("items")?.optJSONObject(0) ?: run { name.text = "Channel unavailable"; return@get }
             val sn = ch.getJSONObject("snippet"); val st = ch.optJSONObject("statistics")
             name.text = sn.getString("title")
+            if (meId.isNotEmpty() && cid == meId) { subRed.visibility = View.GONE; subLbl.visibility = View.GONE; subTail.visibility = View.GONE; sb.setOnClickListener(null); sb.isClickable = false }
             sn.optJSONObject("thumbnails")?.let { th -> (th.optJSONObject("medium") ?: th.optJSONObject("default"))?.optString("url")?.let { load(av, it) } }
             ch.optJSONObject("brandingSettings")?.optJSONObject("image")?.optString("bannerExternalUrl")?.takeIf { it.startsWith("http") }?.let { load(banner, "$it=w1060") }
-            if (st != null && !st.optBoolean("hiddenSubscriberCount")) st.optString("subscriberCount").toLongOrNull()?.let { subs.text = "%,d".format(it); subs.visibility = View.VISIBLE }
+            if (st != null && !st.optBoolean("hiddenSubscriberCount")) st.optString("subscriberCount").toLongOrNull()?.let { subs.text = "%,d".format(it); subsBox.visibility = View.VISIBLE }
             uploads = ch.optJSONObject("contentDetails")?.optJSONObject("relatedPlaylists")?.optString("uploads") ?: ""
             about = sn.optString("description").ifEmpty { "No description." } + "\n\n" +
                 "%,d views".format(st?.optString("viewCount")?.toLongOrNull() ?: 0L) + "\n" +
@@ -769,26 +801,35 @@ class MainActivity : Activity() {
     }
 }
 
-class Icon(ctx: android.content.Context, private val k: Int, private val col: Int = Color.WHITE) : View(ctx) {
+class Icon(ctx: android.content.Context, private val k: Int, private val base: Int = Color.WHITE) : View(ctx) {
     companion object { var font: Typeface? = null }
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private var col = base
+    fun setActive(on: Boolean) { col = if (on) 0xFF2FA8F0.toInt() else base; invalidate() }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val bp = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private val gp = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN) }
     private val bm: Bitmap? = when (k) {
-        2 -> R.drawable.logo_white; 4 -> R.drawable.ic_music; 5 -> R.drawable.ic_upload; 6 -> R.drawable.ic_share; 9 -> R.drawable.ic_add; else -> 0
+        2 -> R.drawable.logo_white; 4 -> R.drawable.ic_music; 5 -> R.drawable.ic_upload; 6 -> R.drawable.ic_share; 7 -> R.drawable.ic_like; 8 -> R.drawable.ic_dislike; 9 -> R.drawable.ic_add; else -> 0
     }.let { if (it != 0) BitmapFactory.decodeResource(ctx.resources, it) else null }
+    private fun shade(c: Int, f: Float) = Color.rgb((Color.red(c) * f).toInt(), (Color.green(c) * f).toInt(), (Color.blue(c) * f).toInt())
     private fun g(c: Canvas, cx: Float, cy: Float, size: Float) {
         val b = bm ?: return
-        p.colorFilter = PorterDuffColorFilter(col, PorterDuff.Mode.SRC_IN)
-        c.drawBitmap(b, null, RectF(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2), p)
-        p.colorFilter = null
+        val r = RectF(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
+        val sc = c.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
+        c.drawBitmap(b, null, r, bp)
+        gp.shader = LinearGradient(0f, r.top, 0f, r.bottom, col, shade(col, .72f), Shader.TileMode.CLAMP)
+        c.drawRect(r, gp)
+        c.restoreToCount(sc)
     }
     override fun onDraw(c: Canvas) {
         val u = minOf(width, height) / 100f; val cx = width / 2f; val cy = height / 2f
         p.color = col; p.strokeCap = Paint.Cap.ROUND; p.strokeWidth = 7 * u; p.style = Paint.Style.FILL
+        p.shader = if (k >= 14) null else LinearGradient(0f, cy - 44 * u, 0f, cy + 44 * u, col, shade(col, .72f), Shader.TileMode.CLAMP)
         fun ring() { p.style = Paint.Style.STROKE; c.drawCircle(cx, cy, 44 * u, p); p.style = Paint.Style.FILL }
         when (k) {
             0 -> for (i in -1..1) c.drawRect(cx - 32 * u, cy + i * 24 * u - 5 * u, cx + 32 * u, cy + i * 24 * u + 5 * u, p)
             1 -> { p.style = Paint.Style.STROKE; c.drawCircle(cx - 6 * u, cy - 6 * u, 22 * u, p); c.drawLine(cx + 10 * u, cy + 10 * u, cx + 34 * u, cy + 34 * u, p) }
-            2 -> { ring(); bm?.let { b -> val w = 60 * u; val h = w * b.height / b.width; c.drawBitmap(b, null, RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), p) } }
+            2 -> { ring(); bm?.let { b -> val w = 60 * u; val h = w * b.height / b.width; c.drawBitmap(b, null, RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), bp) } }
             3 -> {
                 ring(); for (i in 0..2) c.drawRect(cx - 24 * u + i * 18 * u, cy + 20 * u - (10 + i * 12) * u, cx - 14 * u + i * 18 * u, cy + 20 * u, p)
                 p.style = Paint.Style.STROKE; c.drawLine(cx - 26 * u, cy - 4 * u, cx + 24 * u, cy - 26 * u, p)
@@ -796,11 +837,8 @@ class Icon(ctx: android.content.Context, private val k: Int, private val col: In
             4 -> { ring(); g(c, cx, cy, 56 * u) }
             5 -> { ring(); g(c, cx, cy, 52 * u) }
             6 -> g(c, cx, cy, 72 * u)
-            7, 8 -> {
-                if (k == 8) c.rotate(180f, cx, cy)
-                c.drawRect(cx - 36 * u, cy - 4 * u, cx - 22 * u, cy + 34 * u, p); c.drawRoundRect(cx - 18 * u, cy - 8 * u, cx + 34 * u, cy + 34 * u, 8 * u, 8 * u, p)
-                c.drawRoundRect(cx - 8 * u, cy - 36 * u, cx + 8 * u, cy - 2 * u, 8 * u, 8 * u, p)
-            }
+            7, 8 -> g(c, cx, cy, 62 * u)
+            9 -> g(c, cx, cy, 52 * u)
             10 -> {
                 p.style = Paint.Style.STROKE; p.strokeJoin = Paint.Join.ROUND
                 c.drawPath(Path().apply { moveTo(cx - 36 * u, cy - 2 * u); lineTo(cx, cy - 34 * u); lineTo(cx + 36 * u, cy - 2 * u) }, p)
@@ -820,7 +858,11 @@ class Icon(ctx: android.content.Context, private val k: Int, private val col: In
                 p.style = Paint.Style.STROKE; c.drawLine(cx - 30 * u, cy + 28 * u, cx + 28 * u, cy - 28 * u, p)
                 c.drawLine(cx + 28 * u, cy - 28 * u, cx + 4 * u, cy - 28 * u, p); c.drawLine(cx + 28 * u, cy - 28 * u, cx + 28 * u, cy - 4 * u, p)
             }
-            9 -> g(c, cx, cy, 52 * u)
+            14 -> {
+                p.color = Color.WHITE; c.drawRoundRect(cx - 30 * u, cy - 22 * u, cx + 30 * u, cy + 22 * u, 6 * u, 6 * u, p)
+                p.color = 0xFFB84731.toInt(); c.drawPath(Path().apply { moveTo(cx - 8 * u, cy - 12 * u); lineTo(cx - 8 * u, cy + 12 * u); lineTo(cx + 14 * u, cy); close() }, p)
+            }
+            15 -> { p.color = Color.WHITE; c.drawPath(Path().apply { moveTo(width.toFloat(), height * .1f); lineTo(0f, height / 2f); lineTo(width.toFloat(), height * .9f); close() }, p) }
         }
     }
 }
