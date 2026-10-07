@@ -54,8 +54,8 @@ class MainActivity : Activity() {
     private var playerCol: LinearLayout? = null; private var playerWeb: WebView? = null; private val playerRest = ArrayList<View>()
     private var fsView: View? = null; private var fsCb: WebChromeClient.CustomViewCallback? = null
     private val clientId get() = prefs.getString("cid", "")!!.ifEmpty { OAUTH_ID }
-    private val clientSecret get() = prefs.getString("csec", "")!!.ifEmpty { OAUTH_SECRET }
-    private val signedIn get() = prefs.getString("refresh", "")!!.isNotEmpty()
+    private val clientSecret get() = prefs.getString("csec", "")!!.ifEmpty { if (OAUTH_SECRET.startsWith("INSERISCI")) "" else OAUTH_SECRET }
+    private val signedIn get() = prefs.getString("refresh", "")!!.isNotEmpty() || prefs.getString("access", "")!!.isNotEmpty()
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
     private val chrome = object : WebChromeClient() {
@@ -136,13 +136,8 @@ class MainActivity : Activity() {
     }
 
     // ---------- Barre ----------
-    private fun logo() = LinearLayout(this).apply {
-        gravity = Gravity.CENTER
-        addView(tv("You", 22f, Color.WHITE, true))
-        addView(tv("Tube", 22f, Color.WHITE, true).apply {
-            setPadding(dp(5), 0, dp(5), 0)
-            background = GradientDrawable().apply { setColor(RED); cornerRadius = dp(5).toFloat() }
-        })
+    private fun logo() = ImageView(this).apply {
+        setImageResource(R.drawable.logo_color); scaleType = ImageView.ScaleType.FIT_CENTER; setPadding(0, dp(13), 0, dp(13))
     }
     private fun topBar(): View {
         val b = FrameLayout(this).apply { setBackgroundColor(DARK) }
@@ -505,7 +500,7 @@ class MainActivity : Activity() {
     private fun httpPost(url: String, form: String): JSONObject? = try { JSONObject(http(url, "POST", form = form).second) } catch (e: Exception) { null }
     private fun token(): String {
         if (System.currentTimeMillis() < prefs.getLong("exp", 0) - 60000) return prefs.getString("access", "")!!
-        val r = httpPost("https://oauth2.googleapis.com/token", "client_id=${enc(clientId)}&client_secret=${enc(clientSecret)}&refresh_token=${enc(prefs.getString("refresh", "")!!)}&grant_type=refresh_token")
+        val r = httpPost("https://oauth2.googleapis.com/token", "client_id=${enc(clientId)}${if (clientSecret.isEmpty()) "" else "&client_secret=" + enc(clientSecret)}&refresh_token=${enc(prefs.getString("refresh", "")!!)}&grant_type=refresh_token")
         val t = r?.optString("access_token").orEmpty()
         if (t.isNotEmpty()) prefs.edit().putString("access", t).putLong("exp", System.currentTimeMillis() + (r?.optLong("expires_in", 3600) ?: 3600) * 1000).apply()
         return t
@@ -526,7 +521,7 @@ class MainActivity : Activity() {
                 if (r == null || !r.has("user_code")) { toast(r?.optString("error_description")?.ifEmpty { null } ?: "Sign-in failed. Check the OAuth client."); return@post }
                 val code = r.getString("user_code"); val url = r.getString("verification_url"); val dev = r.getString("device_code")
                 val until = System.currentTimeMillis() + r.optLong("expires_in", 1800) * 1000; var wait = r.optInt("interval", 5)
-                val dlg = android.app.AlertDialog.Builder(this).setTitle("Sign in with Google")
+                val dlg = android.app.AlertDialog.Builder(this).setTitle("Sign in with Google").setCancelable(false)
                     .setMessage("1. Open $url\n2. Enter this code:\n\n$code\n\nThis window closes when you are signed in.")
                     .setPositiveButton("Open page", null).setNeutralButton("Copy code", null)
                     .setNegativeButton("Cancel") { _, _ -> polling = false }.setOnCancelListener { polling = false }.show()
@@ -539,7 +534,7 @@ class MainActivity : Activity() {
                     while (polling && System.currentTimeMillis() < until) {
                         Thread.sleep(wait * 1000L)
                         if (!polling) break
-                        val t = httpPost("https://oauth2.googleapis.com/token", "client_id=${enc(clientId)}&client_secret=${enc(clientSecret)}&device_code=${enc(dev)}&grant_type=${enc("urn:ietf:params:oauth:grant-type:device_code")}")
+                        val t = httpPost("https://oauth2.googleapis.com/token", "client_id=${enc(clientId)}${if (clientSecret.isEmpty()) "" else "&client_secret=" + enc(clientSecret)}&device_code=${enc(dev)}&grant_type=${enc("urn:ietf:params:oauth:grant-type:device_code")}")
                         if (t != null && t.has("access_token")) {
                             prefs.edit().putString("access", t.getString("access_token")).putString("refresh", t.optString("refresh_token"))
                                 .putLong("exp", System.currentTimeMillis() + t.optLong("expires_in", 3600) * 1000).apply()
@@ -547,7 +542,7 @@ class MainActivity : Activity() {
                             ui.post { dlg.dismiss(); toast("Signed in"); refreshAccount(); home() }
                             return@thread
                         }
-                        when (t?.optString("error")) { "authorization_pending" -> {}; "slow_down" -> wait += 5; else -> break }
+                        when (t?.optString("error")) { "authorization_pending" -> {}; "slow_down" -> wait += 5; else -> { val e = (t?.optString("error").orEmpty() + " " + t?.optString("error_description").orEmpty()).trim().ifEmpty { "network error" }; ui.post { toast("Sign-in failed: $e") }; break } }
                     }
                     ui.post { if (dlg.isShowing) dlg.dismiss() }
                 }
@@ -778,7 +773,7 @@ class Icon(ctx: android.content.Context, private val k: Int, private val col: In
     companion object { var font: Typeface? = null }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
     private val bm: Bitmap? = when (k) {
-        4 -> R.drawable.ic_music; 5 -> R.drawable.ic_upload; 6 -> R.drawable.ic_share; 9 -> R.drawable.ic_add; else -> 0
+        2 -> R.drawable.logo_white; 4 -> R.drawable.ic_music; 5 -> R.drawable.ic_upload; 6 -> R.drawable.ic_share; 9 -> R.drawable.ic_add; else -> 0
     }.let { if (it != 0) BitmapFactory.decodeResource(ctx.resources, it) else null }
     private fun g(c: Canvas, cx: Float, cy: Float, size: Float) {
         val b = bm ?: return
@@ -793,7 +788,7 @@ class Icon(ctx: android.content.Context, private val k: Int, private val col: In
         when (k) {
             0 -> for (i in -1..1) c.drawRect(cx - 32 * u, cy + i * 24 * u - 5 * u, cx + 32 * u, cy + i * 24 * u + 5 * u, p)
             1 -> { p.style = Paint.Style.STROKE; c.drawCircle(cx - 6 * u, cy - 6 * u, 22 * u, p); c.drawLine(cx + 10 * u, cy + 10 * u, cx + 34 * u, cy + 34 * u, p) }
-            2 -> { ring(); p.textSize = 26 * u; p.textAlign = Paint.Align.CENTER; p.typeface = font ?: Typeface.DEFAULT_BOLD; p.isFakeBoldText = true; c.drawText("You", cx, cy + 9 * u, p) }
+            2 -> { ring(); bm?.let { b -> val w = 60 * u; val h = w * b.height / b.width; c.drawBitmap(b, null, RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), p) } }
             3 -> {
                 ring(); for (i in 0..2) c.drawRect(cx - 24 * u + i * 18 * u, cy + 20 * u - (10 + i * 12) * u, cx - 14 * u + i * 18 * u, cy + 20 * u, p)
                 p.style = Paint.Style.STROKE; c.drawLine(cx - 26 * u, cy - 4 * u, cx + 24 * u, cy - 26 * u, p)
