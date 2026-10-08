@@ -17,6 +17,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
+      - name: Keystore personale (opzionale)
+        env:
+          KS: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/my.keystore"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/my.keystore" >> "$GITHUB_ENV"
+            echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          fi
       - run: gradle assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
