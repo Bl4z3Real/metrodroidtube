@@ -28,6 +28,17 @@ jobs:
           if [ -n "$CID" ]; then
             sed -i "s/INSERISCI_CLIENT_ID/$CID/; s/INSERISCI_CLIENT_SECRET/$CSEC/" app/src/main/java/it/metro/tube/MainActivity.kt
           fi
+      - name: Keystore personale (opzionale)
+        env:
+          KS: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/my.keystore"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/my.keystore" >> "$GITHUB_ENV"
+            echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          fi
       - run: gradle assembleDebug --no-daemon
       - run: cp app/build/outputs/apk/debug/app-debug.apk MetroTube-${{ github.ref_name }}.apk
       - uses: softprops/action-gh-release@v2
