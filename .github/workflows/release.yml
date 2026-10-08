@@ -40,8 +40,8 @@ jobs:
             echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
           fi
       - run: gradle assembleDebug --no-daemon
-      - run: cp app/build/outputs/apk/debug/app-debug.apk MetroTube-${{ github.ref_name }}.apk
+      - run: cp app/build/outputs/apk/debug/app-debug.apk WpTube-${{ github.ref_name }}.apk
       - uses: softprops/action-gh-release@v2
         with:
-          files: MetroTube-*.apk
+          files: WpTube-*.apk
           generate_release_notes: true
