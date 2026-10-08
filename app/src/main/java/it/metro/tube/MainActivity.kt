@@ -261,7 +261,7 @@ class MainActivity : Activity() {
         item("History", 0, 11) { localList("History", "history") }
         item("Watch later", 0, 12) { localList("Watch later", "later") }
         head("BEST OF YOUTUBE")
-        item("Trending", 0, 13) { cat("Trending", null) }
+        item("Trending", R.drawable.ic_trending, 0) { cat("Trending", null) }
         item("Music", R.drawable.d_music, 0) { cat("Music", "10") }
         item("Entertainment", R.drawable.d_entertainment, 0) { cat("Entertainment", "24") }
         item("Sports", R.drawable.d_sports, 0) { cat("Sports", "17") }
@@ -809,7 +809,7 @@ class Icon(ctx: android.content.Context, private val k: Int, private val base: I
     private val bp = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
     private val gp = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN) }
     private val bm: Bitmap? = when (k) {
-        2 -> R.drawable.logo_white; 4 -> R.drawable.ic_music; 5 -> R.drawable.ic_upload; 6 -> R.drawable.ic_share; 7 -> R.drawable.ic_like; 8 -> R.drawable.ic_dislike; 9 -> R.drawable.ic_add; else -> 0
+        2 -> R.drawable.logo_white; 3 -> R.drawable.ic_trending; 4 -> R.drawable.ic_music; 6 -> R.drawable.ic_share; 7 -> R.drawable.ic_like; 8 -> R.drawable.ic_dislike; 9 -> R.drawable.ic_add; else -> 0
     }.let { if (it != 0) BitmapFactory.decodeResource(ctx.resources, it) else null }
     private fun shade(c: Int, f: Float) = Color.rgb((Color.red(c) * f).toInt(), (Color.green(c) * f).toInt(), (Color.blue(c) * f).toInt())
     private fun g(c: Canvas, cx: Float, cy: Float, size: Float) {
@@ -830,12 +830,12 @@ class Icon(ctx: android.content.Context, private val k: Int, private val base: I
             0 -> for (i in -1..1) c.drawRect(cx - 32 * u, cy + i * 24 * u - 5 * u, cx + 32 * u, cy + i * 24 * u + 5 * u, p)
             1 -> { p.style = Paint.Style.STROKE; c.drawCircle(cx - 6 * u, cy - 6 * u, 22 * u, p); c.drawLine(cx + 10 * u, cy + 10 * u, cx + 34 * u, cy + 34 * u, p) }
             2 -> { ring(); bm?.let { b -> val w = 60 * u; val h = w * b.height / b.width; c.drawBitmap(b, null, RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), bp) } }
-            3 -> {
-                ring(); for (i in 0..2) c.drawRect(cx - 24 * u + i * 18 * u, cy + 20 * u - (10 + i * 12) * u, cx - 14 * u + i * 18 * u, cy + 20 * u, p)
-                p.style = Paint.Style.STROKE; c.drawLine(cx - 26 * u, cy - 4 * u, cx + 24 * u, cy - 26 * u, p)
-            }
+            3 -> { ring(); g(c, cx, cy, 54 * u) }
             4 -> { ring(); g(c, cx, cy, 56 * u) }
-            5 -> { ring(); g(c, cx, cy, 52 * u) }
+            5 -> {
+                ring(); c.drawRoundRect(cx - 28 * u, cy - 16 * u, cx + 8 * u, cy + 16 * u, 6 * u, 6 * u, p)
+                c.drawPath(Path().apply { moveTo(cx + 12 * u, cy - 3 * u); lineTo(cx + 30 * u, cy - 14 * u); lineTo(cx + 30 * u, cy + 14 * u); lineTo(cx + 12 * u, cy + 3 * u); close() }, p)
+            }
             6 -> g(c, cx, cy, 72 * u)
             7, 8 -> g(c, cx, cy, 62 * u)
             9 -> g(c, cx, cy, 52 * u)
