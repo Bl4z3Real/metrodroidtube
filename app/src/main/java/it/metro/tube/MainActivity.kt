@@ -78,6 +78,32 @@ class MainActivity : Activity() {
         window.decorView.systemUiVisibility = if (on) (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE) else 0
     }
+    override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); i.data?.let { openLink(it) } }
+
+    // Apre i link youtu.be, youtube.com, www.youtube.com, m.youtube.com
+    private fun openLink(u: Uri) {
+        val host = (u.host ?: "").removePrefix("www.").removePrefix("m."); val seg = u.pathSegments
+        fun video(id: String) = get("${base}videos?part=snippet,statistics&id=${enc(id)}&key=$key") { j ->
+            val o = j?.optJSONArray("items")?.optJSONObject(0)
+            if (o == null) { toast("Video not found"); return@get }
+            val sn = o.getJSONObject("snippet"); chOf[id] = sn.optString("channelId")
+            player(id, Html.fromHtml(sn.getString("title"), 0).toString(), sn.getString("channelTitle"),
+                o.optJSONObject("statistics")?.optString("viewCount")?.toLongOrNull()?.let { "%,d views".format(it) })
+        }
+        fun resolve(q: String) = get("${base}channels?part=id&$q&key=$key") { j ->
+            j?.optJSONArray("items")?.optJSONObject(0)?.optString("id")?.takeIf { it.isNotEmpty() }?.let { channel(it) } ?: toast("Channel not found")
+        }
+        val v = u.getQueryParameter("v"); val pl = u.getQueryParameter("list")
+        when {
+            host == "youtu.be" && seg.isNotEmpty() -> video(seg[0])
+            v != null -> video(v)
+            seg.size >= 2 && seg[0] in listOf("shorts", "live", "embed", "v") -> video(seg[1])
+            seg.isNotEmpty() && seg[0] == "playlist" && pl != null -> list("Playlist", "", "${base}playlistItems?part=snippet&maxResults=50&playlistId=${enc(pl)}&key=$key", false)
+            seg.size >= 2 && seg[0] == "channel" -> channel(seg[1])
+            seg.isNotEmpty() && seg[0].startsWith("@") -> resolve("forHandle=${enc(seg[0])}")
+            seg.size >= 2 && seg[0] == "user" -> resolve("forUsername=${enc(seg[1])}")
+        }
+    }
     override fun onConfigurationChanged(c: Configuration) { super.onConfigurationChanged(c); applyLayout() }
     private fun applyLayout() {
         val land = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -140,6 +166,7 @@ class MainActivity : Activity() {
         setContentView(root)
         if (signedIn) refreshAccount()
         home()
+        intent?.data?.let { openLink(it) }
     }
 
     // ---------- Barre ----------
@@ -796,6 +823,9 @@ class MainActivity : Activity() {
         row("Account", { if (signedIn) "Sign out" else "Sign in" }) { if (signedIn) signOut() else signIn() }
         row("OAuth client", { if (clientId.startsWith("INSERISCI")) "Not set" else "Set" }) { v -> askOauth { v.text = if (clientId.startsWith("INSERISCI")) "Not set" else "Set" } }
         row("Safe Search", { if (safe) "On" else "Off" }) { safe = !safe }
+        val ver = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0" } catch (e: Exception) { "1.0" }
+        row("Version", { ver }) { }
+        row("Developer", { "Blaze Inc." }) { }
         col.addView(card)
         show(col)
     }
