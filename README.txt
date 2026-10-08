@@ -17,3 +17,10 @@ Login Google (iscrizioni, feed, like, commenti)
 2. Inserisci ID e secret in Settings > OAuth client dell'app, oppure (per la release pubblica) nei secret del repository OAUTH_CLIENT_ID e OAUTH_CLIENT_SECRET.
 3. Con la schermata di consenso in modalità "Test" possono accedere solo gli utenti di test (max 100); per tutti serve la verifica di Google.
 Nota: YouTube non offre via API la cronologia di visione né "Guarda più tardi": restano salvate sul dispositivo.
+
+Aggiornare l'app senza conflitti
+- L'APK è sempre firmato con la stessa chiave (keystore/metrotube.keystore, password "metrotube") e il versionCode cresce a ogni build:
+  installando una nuova versione sopra la vecchia i dati restano (cronologia, chiave API, login).
+- Solo la PRIMA volta, se hai installato versioni firmate con un'altra chiave, serve disinstallarle una volta.
+- Per usare una chiave tutta tua (consigliato se il repository è pubblico): crea la keystore, poi nei secret del repository metti
+  KEYSTORE_BASE64 (base64 del file), STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD. Se non li imposti si usa quella inclusa.
