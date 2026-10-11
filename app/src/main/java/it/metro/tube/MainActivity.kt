@@ -57,7 +57,7 @@ class MainActivity : Activity() {
     private val chOf = HashMap<String, String>()
     private var meName = ""; private var meAvatar = ""; private var meId = ""; private var likesPl = ""
     @Volatile private var polling = false
-    private var playerCol: LinearLayout? = null; private var playerWeb: WebView? = null; private var playerBox: View? = null; private var playerFs: Icon? = null; private val playerRest = ArrayList<View>()
+    private var playerCol: LinearLayout? = null; private var playerWeb: WebView? = null; private var playerBox: View? = null; private var playerFs: View? = null; private val playerRest = ArrayList<View>()
     private var fsView: View? = null; private var fsCb: WebChromeClient.CustomViewCallback? = null
     private val clientId get() = prefs.getString("cid", "")!!.ifEmpty { OAUTH_ID }
     private val clientSecret get() = prefs.getString("csec", "")!!.ifEmpty { if (OAUTH_SECRET.startsWith("INSERISCI")) "" else OAUTH_SECRET }
@@ -123,7 +123,7 @@ class MainActivity : Activity() {
         topV.visibility = if (full) View.GONE else View.VISIBLE; botV.visibility = topV.visibility
         playerRest.forEach { it.visibility = if (full) View.GONE else View.VISIBLE }
         playerBox?.let { w -> (w.layoutParams as? LinearLayout.LayoutParams)?.let { q -> q.height = if (full) -1 else dp(220); w.layoutParams = q } }
-        playerFs?.setAlt(full); if (fsView == null) immersive(full)
+        if (fsView == null) immersive(full)
     }
     private fun stopPlayer() {
         playerWeb?.loadUrl("about:blank"); playerCol?.let { stack.remove(it) }
@@ -473,20 +473,26 @@ class MainActivity : Activity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // ---- Player personalizzato sopra l'IFrame Player API (controls=0) ----
         val web = WebView(this); val box = FrameLayout(this)
+        var curT = 0.0; var loop = false; var speed = 1.0; var sleepTask: Runnable? = null
         var playing = false; var dur = 0.0; var tracking = false; var hq: TextView? = null; var hideTask: Runnable? = null
-        val ctl = FrameLayout(this).apply { setBackgroundColor(0x66000000) }
+        // Striscia semitrasparente solo in basso: play/pausa al centro in alto, sotto barra + schermo intero
+        val ctl = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(0x66000000); gravity = Gravity.CENTER_HORIZONTAL }
         val pp = ImageView(this).apply { setImageResource(R.drawable.ic_pause_c); tilt(this) }
-        ctl.addView(pp, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(14) })
+        val top = FrameLayout(this)
+        top.addView(pp, FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(6) })
+        val gear = sym("\u2699", 22f, Color.WHITE).apply { gravity = Gravity.CENTER; includeFontPadding = false; tilt(this) }
+        top.addView(gear, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.END or Gravity.TOP))
+        ctl.addView(top, lp(-1, dp(46)))
         val tCur = tv("0:00", 12f, Color.WHITE); val tDur = tv("0:00", 12f, Color.WHITE)
         val seek = SeekBar(this).apply {
             max = 1000; progressTintList = ColorStateList.valueOf(RED); thumbTintList = ColorStateList.valueOf(Color.WHITE)
             progressBackgroundTintList = ColorStateList.valueOf(0x66FFFFFF)
         }
-        val fsB = Icon(this, 16, Color.WHITE).apply { tilt(this) }
+        val fsB = sym("\u26F6", 22f, Color.WHITE).apply { gravity = Gravity.CENTER; includeFontPadding = false; tilt(this) }
         val bottom = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), 0, dp(6), dp(4)) }
-        bottom.addView(tCur); bottom.addView(seek, lp(0, dp(36), 1f)); bottom.addView(tDur); bottom.addView(fsB, lp(dp(36), dp(36)))
-        ctl.addView(bottom, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
-        val ov = FrameLayout(this); ov.addView(ctl, FrameLayout.LayoutParams(-1, -1))
+        bottom.addView(tCur); bottom.addView(seek, lp(0, dp(34), 1f)); bottom.addView(tDur); bottom.addView(fsB, lp(dp(36), dp(34)))
+        ctl.addView(bottom, lp(-1, -2))
+        val ov = FrameLayout(this); ov.addView(ctl, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         box.addView(web, FrameLayout.LayoutParams(-1, -1)); box.addView(ov, FrameLayout.LayoutParams(-1, -1))
         col.addView(box, LinearLayout.LayoutParams(-1, dp(220)))
         fun js(c: String) { web.evaluateJavascript("try{$c}catch(e){}", null) }
@@ -497,7 +503,73 @@ class MainActivity : Activity() {
                 if (playing) { val r = Runnable { showCtl(false) }; hideTask = r; ui.postDelayed(r, 3000) }
             } else ctl.animate().alpha(0f).setDuration(200).withEndAction { ctl.visibility = View.INVISIBLE }.start()
         }
-        ov.setOnClickListener { showCtl(ctl.visibility != View.VISIBLE || ctl.alpha < 0.5f) }
+        // Gesti e menu ispirati ai player moderni (scritti da zero): doppio tocco ±10 s, scorrimento per volume/luminosità, velocità, ripeti, timer
+        val hint = tv("", 20f, Color.WHITE, true).apply { setPadding(dp(16), dp(8), dp(16), dp(8)); background = grad(0xAA000000.toInt(), 0xAA000000.toInt(), 6); alpha = 0f }
+        ov.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        var flashTask: Runnable? = null
+        fun flash(m: String) {
+            hint.text = m; hint.alpha = 1f; flashTask?.let { ui.removeCallbacks(it) }
+            val r = Runnable { hint.animate().alpha(0f).setDuration(250).start() }; flashTask = r; ui.postDelayed(r, 700)
+        }
+        val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+        var volF = 0f; var briF = 0.5f
+        val gd = android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
+                volF = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toFloat()
+                briF = window.attributes.screenBrightness.let { if (it < 0) 0.5f else it }
+                return true
+            }
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean { showCtl(ctl.visibility != View.VISIBLE || ctl.alpha < 0.5f); return true }
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                val w = ov.width.toFloat()
+                when {
+                    e.x < w / 3 -> { js("p.seekTo(${(curT - 10).coerceAtLeast(0.0)},true)"); flash("−10 s") }
+                    e.x > w * 2 / 3 -> { js("p.seekTo(${curT + 10},true)"); flash("+10 s") }
+                    else -> js(if (playing) "p.pauseVideo()" else "p.playVideo()")
+                }
+                return true
+            }
+            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+                if (e1 == null || Math.abs(dy) < Math.abs(dx)) return false
+                val h = ov.height.toFloat().coerceAtLeast(1f)
+                if (e1.x > ov.width / 2f) {
+                    val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                    volF = (volF + dy / h * max * 1.5f).coerceIn(0f, max.toFloat())
+                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, volF.toInt(), 0); flash("Volume ${(volF / max * 100).toInt()}%")
+                } else {
+                    briF = (briF + dy / h * 1.5f).coerceIn(0.02f, 1f)
+                    val a = window.attributes; a.screenBrightness = briF; window.attributes = a; flash("Brightness ${(briF * 100).toInt()}%")
+                }
+                return true
+            }
+        })
+        @Suppress("ClickableViewAccessibility")
+        ov.setOnTouchListener { _, e -> gd.onTouchEvent(e); true }
+        fun menu() {
+            val items = arrayOf("Speed: ${if (speed == 1.0) "Normal" else "${speed}x"}", "Loop: ${if (loop) "On" else "Off"}", "Sleep timer: ${if (sleepTask != null) "On" else "Off"}")
+            android.app.AlertDialog.Builder(this).setTitle("Player").setItems(items) { _, w ->
+                when (w) {
+                    0 -> {
+                        val rates = doubleArrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+                        android.app.AlertDialog.Builder(this).setTitle("Speed").setItems(rates.map { if (it == 1.0) "Normal" else "${it}x" }.toTypedArray()) { _, i ->
+                            speed = rates[i]; js("p.setPlaybackRate(${rates[i]})"); flash("Speed ${rates[i]}x")
+                        }.show()
+                    }
+                    1 -> { loop = !loop; js("window.loopOn=$loop"); flash(if (loop) "Loop on" else "Loop off") }
+                    else -> {
+                        val mins = intArrayOf(0, 15, 30, 60)
+                        android.app.AlertDialog.Builder(this).setTitle("Sleep timer").setItems(arrayOf("Off", "15 min", "30 min", "60 min")) { _, i ->
+                            sleepTask?.let { ui.removeCallbacks(it) }; sleepTask = null
+                            if (mins[i] > 0) {
+                                val r = Runnable { js("p.pauseVideo()"); sleepTask = null; toast("Sleep timer: paused") }
+                                sleepTask = r; ui.postDelayed(r, mins[i] * 60000L); flash("Sleep in ${mins[i]} min")
+                            }
+                        }.show()
+                    }
+                }
+            }.show()
+        }
+        gear.setOnClickListener { menu() }
         pp.setOnClickListener { js(if (playing) "p.pauseVideo()" else "p.playVideo()"); showCtl(true) }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, v: Int, user: Boolean) { if (user) tCur.text = clock(v / 1000.0 * dur) }
@@ -529,13 +601,13 @@ class MainActivity : Activity() {
             webChromeClient = chrome
             addJavascriptInterface(object {
                 @JavascriptInterface fun tick(cur: Double, d: Double, st: Int) {
-                    ui.post { dur = d; if (d > 0) { tDur.text = clock(d); if (!tracking) { seek.progress = (cur / d * 1000).toInt(); tCur.text = clock(cur) } } }
+                    ui.post { dur = d; curT = cur; if (d > 0) { tDur.text = clock(d); if (!tracking) { seek.progress = (cur / d * 1000).toInt(); tCur.text = clock(cur) } } }
                 }
                 @JavascriptInterface fun state(st: Int) {
                     ui.post { playing = st == 1 || st == 3; pp.setImageResource(if (playing) R.drawable.ic_pause_c else R.drawable.ic_play_c); showCtl(true) }
                 }
             }, "Android")
-            loadDataWithBaseURL("https://it.metro.tube/", """<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>html,body{margin:0;height:100%;background:#000}iframe{position:absolute;top:0;left:0;width:100%;height:100%}</style></head><body><div id='p'></div><script src='https://www.youtube.com/iframe_api'></script><script>var p;function onYouTubeIframeAPIReady(){p=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',playerVars:{playsinline:1,autoplay:1,controls:0,rel:0,modestbranding:1,fs:0,iv_load_policy:3,disablekb:1,origin:'https://it.metro.tube'},events:{onReady:function(){setInterval(function(){if(p&&p.getCurrentTime)Android.tick(p.getCurrentTime(),p.getDuration(),p.getPlayerState())},500)},onStateChange:function(e){Android.state(e.data)}}})}</script></body></html>""",
+            loadDataWithBaseURL("https://it.metro.tube/", """<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>html,body{margin:0;height:100%;background:#000}iframe{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}#cv{position:absolute;top:0;left:0;width:100%;height:100%;background:#000}</style></head><body><div id='p'></div><div id='cv'></div><script src='https://www.youtube.com/iframe_api'></script><script>var p;function onYouTubeIframeAPIReady(){p=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',playerVars:{playsinline:1,autoplay:1,controls:0,rel:0,modestbranding:1,fs:0,iv_load_policy:3,disablekb:1,origin:'https://it.metro.tube'},events:{onReady:function(){setInterval(function(){if(p&&p.getCurrentTime)Android.tick(p.getCurrentTime(),p.getDuration(),p.getPlayerState())},500)},onStateChange:function(e){var c=document.getElementById('cv');if(e.data==1)c.style.display='none';if(e.data==0){if(window.loopOn){p.seekTo(0,true);p.playVideo()}else c.style.display='block'}Android.state(e.data)}}})}</script></body></html>""",
                 "text/html", "utf-8", null)
         }
         val bar = LinearLayout(this).apply { background = grad(0xFF515151.toInt(), 0xFF424242.toInt()); gravity = Gravity.CENTER_VERTICAL }
