@@ -504,12 +504,12 @@ class MainActivity : Activity() {
             } else ctl.animate().alpha(0f).setDuration(200).withEndAction { ctl.visibility = View.INVISIBLE }.start()
         }
         // Gesti e menu ispirati ai player moderni (scritti da zero): doppio tocco ±10 s, scorrimento per volume/luminosità, velocità, ripeti, timer
-        val hint = tv("", 20f, Color.WHITE, true).apply { setPadding(dp(16), dp(8), dp(16), dp(8)); background = grad(0xAA000000.toInt(), 0xAA000000.toInt(), 6); alpha = 0f }
-        ov.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val hintV = tv("", 20f, Color.WHITE, true).apply { setPadding(dp(16), dp(8), dp(16), dp(8)); background = grad(0xAA000000.toInt(), 0xAA000000.toInt(), 6); alpha = 0f }
+        ov.addView(hintV, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         var flashTask: Runnable? = null
         fun flash(m: String) {
-            hint.text = m; hint.alpha = 1f; flashTask?.let { ui.removeCallbacks(it) }
-            val r = Runnable { hint.animate().alpha(0f).setDuration(250).start() }; flashTask = r; ui.postDelayed(r, 700)
+            hintV.text = m; hintV.alpha = 1f; flashTask?.let { ui.removeCallbacks(it) }
+            val r = Runnable { hintV.animate().alpha(0f).setDuration(250).start() }; flashTask = r; ui.postDelayed(r, 700)
         }
         val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
         var volF = 0f; var briF = 0.5f
