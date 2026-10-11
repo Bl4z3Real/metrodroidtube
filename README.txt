@@ -24,3 +24,7 @@ Aggiornare l'app senza conflitti
 - Solo la PRIMA volta, se hai installato versioni firmate con un'altra chiave, serve disinstallarle una volta.
 - Per usare una chiave tutta tua (consigliato se il repository è pubblico): crea la keystore, poi nei secret del repository metti
   KEYSTORE_BASE64 (base64 del file), STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD. Se non li imposti si usa quella inclusa.
+
+Innertube SDK
+- Il livello Innertube segue l'approccio di yunesco/innertube-sdk (MIT, pacchetto Node): chiave e versione del client web lette dalla home di YouTube con nuovo tentativo su errore 400,
+  /player con contesto Android, /next /browse /search con contesto Web, uploads di un canale tramite playlist VL+UU. Solo metadati: nessun flusso video.
