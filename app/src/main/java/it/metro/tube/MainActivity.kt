@@ -10,6 +10,8 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.format.DateUtils
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.webkit.JavascriptInterface
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.webkit.WebChromeClient
@@ -55,7 +57,7 @@ class MainActivity : Activity() {
     private val chOf = HashMap<String, String>()
     private var meName = ""; private var meAvatar = ""; private var meId = ""; private var likesPl = ""
     @Volatile private var polling = false
-    private var playerCol: LinearLayout? = null; private var playerWeb: WebView? = null; private val playerRest = ArrayList<View>()
+    private var playerCol: LinearLayout? = null; private var playerWeb: WebView? = null; private var playerBox: View? = null; private var playerFs: Icon? = null; private val playerRest = ArrayList<View>()
     private var fsView: View? = null; private var fsCb: WebChromeClient.CustomViewCallback? = null
     private val clientId get() = prefs.getString("cid", "")!!.ifEmpty { OAUTH_ID }
     private val clientSecret get() = prefs.getString("csec", "")!!.ifEmpty { if (OAUTH_SECRET.startsWith("INSERISCI")) "" else OAUTH_SECRET }
@@ -120,11 +122,13 @@ class MainActivity : Activity() {
         val full = land && playerCol != null && stack.lastOrNull() === playerCol
         topV.visibility = if (full) View.GONE else View.VISIBLE; botV.visibility = topV.visibility
         playerRest.forEach { it.visibility = if (full) View.GONE else View.VISIBLE }
-        playerWeb?.let { w -> (w.layoutParams as? LinearLayout.LayoutParams)?.let { q -> q.height = if (full) -1 else dp(220); w.layoutParams = q } }
+        playerBox?.let { w -> (w.layoutParams as? LinearLayout.LayoutParams)?.let { q -> q.height = if (full) -1 else dp(220); w.layoutParams = q } }
+        playerFs?.setAlt(full); if (fsView == null) immersive(full)
     }
     private fun stopPlayer() {
         playerWeb?.loadUrl("about:blank"); playerCol?.let { stack.remove(it) }
-        playerWeb = null; playerCol = null; playerRest.clear()
+        playerWeb = null; playerCol = null; playerBox = null; playerFs = null; playerRest.clear()
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
     private lateinit var content: FrameLayout
     private lateinit var drawer: ScrollView
@@ -467,16 +471,75 @@ class MainActivity : Activity() {
         stopPlayer()
         addSaved("history", id, title, ch)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val web = WebView(this).apply {
+        // ---- Player personalizzato sopra l'IFrame Player API (controls=0) ----
+        val web = WebView(this); val box = FrameLayout(this)
+        var playing = false; var dur = 0.0; var tracking = false; var hq: TextView? = null; var hideTask: Runnable? = null
+        val ctl = FrameLayout(this).apply { setBackgroundColor(0x66000000) }
+        val pp = ImageView(this).apply { setImageResource(R.drawable.ic_pause_c); tilt(this) }
+        ctl.addView(pp, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(14) })
+        val tCur = tv("0:00", 12f, Color.WHITE); val tDur = tv("0:00", 12f, Color.WHITE)
+        val seek = SeekBar(this).apply {
+            max = 1000; progressTintList = ColorStateList.valueOf(RED); thumbTintList = ColorStateList.valueOf(Color.WHITE)
+            progressBackgroundTintList = ColorStateList.valueOf(0x66FFFFFF)
+        }
+        val fsB = Icon(this, 16, Color.WHITE).apply { tilt(this) }
+        val bottom = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), 0, dp(6), dp(4)) }
+        bottom.addView(tCur); bottom.addView(seek, lp(0, dp(36), 1f)); bottom.addView(tDur); bottom.addView(fsB, lp(dp(36), dp(36)))
+        ctl.addView(bottom, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        val ov = FrameLayout(this); ov.addView(ctl, FrameLayout.LayoutParams(-1, -1))
+        box.addView(web, FrameLayout.LayoutParams(-1, -1)); box.addView(ov, FrameLayout.LayoutParams(-1, -1))
+        col.addView(box, LinearLayout.LayoutParams(-1, dp(220)))
+        fun js(c: String) { web.evaluateJavascript("try{$c}catch(e){}", null) }
+        fun showCtl(on: Boolean) {
+            hideTask?.let { ui.removeCallbacks(it) }
+            if (on) {
+                ctl.visibility = View.VISIBLE; ctl.animate().alpha(1f).setDuration(150).start()
+                if (playing) { val r = Runnable { showCtl(false) }; hideTask = r; ui.postDelayed(r, 3000) }
+            } else ctl.animate().alpha(0f).setDuration(200).withEndAction { ctl.visibility = View.INVISIBLE }.start()
+        }
+        ov.setOnClickListener { showCtl(ctl.visibility != View.VISIBLE || ctl.alpha < 0.5f) }
+        pp.setOnClickListener { js(if (playing) "p.pauseVideo()" else "p.playVideo()"); showCtl(true) }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, v: Int, user: Boolean) { if (user) tCur.text = clock(v / 1000.0 * dur) }
+            override fun onStartTrackingTouch(sb: SeekBar?) { tracking = true; hideTask?.let { ui.removeCallbacks(it) } }
+            override fun onStopTrackingTouch(sb: SeekBar?) { tracking = false; js("p.seekTo(${seek.progress / 1000.0 * dur},true)"); showCtl(true) }
+        })
+        fsB.setOnClickListener {
+            if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                ui.postDelayed({ requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }, 1200)
+            } else requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        fun pickQuality() {
+            web.evaluateJavascript("(function(){try{return JSON.stringify(p.getAvailableQualityLevels())}catch(e){return '[]'}})()") { r ->
+                val lv = ArrayList<String>()
+                try { val a = org.json.JSONArray((org.json.JSONTokener(r ?: "null").nextValue() as? String) ?: "[]"); for (i in 0 until a.length()) lv.add(a.getString(i)) } catch (e: Exception) { }
+                lv.remove("auto"); if (lv.isEmpty()) lv.addAll(listOf("hd1080", "hd720", "large", "medium", "small", "tiny"))
+                val names = mapOf("highres" to "4320p", "hd2880" to "2880p", "hd2160" to "2160p", "hd1440" to "1440p", "hd1080" to "1080p", "hd720" to "720p", "large" to "480p", "medium" to "360p", "small" to "240p", "tiny" to "144p")
+                val labels = listOf("Auto") + lv.map { names[it] ?: it }
+                android.app.AlertDialog.Builder(this).setTitle("Quality").setItems(labels.toTypedArray()) { _, w ->
+                    if (w == 0) { js("p.setPlaybackQuality('default')"); hq?.text = "HQ" }
+                    else { val q = lv[w - 1]; js("p.setPlaybackQualityRange('$q','$q');p.setPlaybackQuality('$q')"); hq?.text = labels[w] }
+                    toast("Quality: ${labels[w]} (YouTube may adjust it)")
+                }.show()
+            }
+        }
+        web.apply {
             setBackgroundColor(Color.BLACK); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.mediaPlaybackRequiresUserGesture = false
             webChromeClient = chrome
-            loadDataWithBaseURL("https://it.metro.tube/",
-                "<body style='margin:0;background:#000'><iframe width='100%' height='100%' src='https://www.youtube.com/embed/$id?playsinline=1&autoplay=1&rel=0&origin=https://it.metro.tube' referrerpolicy='strict-origin-when-cross-origin' frameborder='0' allow='autoplay;fullscreen;encrypted-media' allowfullscreen></iframe></body>",
+            addJavascriptInterface(object {
+                @JavascriptInterface fun tick(cur: Double, d: Double, st: Int) {
+                    ui.post { dur = d; if (d > 0) { tDur.text = clock(d); if (!tracking) { seek.progress = (cur / d * 1000).toInt(); tCur.text = clock(cur) } } }
+                }
+                @JavascriptInterface fun state(st: Int) {
+                    ui.post { playing = st == 1 || st == 3; pp.setImageResource(if (playing) R.drawable.ic_pause_c else R.drawable.ic_play_c); showCtl(true) }
+                }
+            }, "Android")
+            loadDataWithBaseURL("https://it.metro.tube/", """<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>html,body{margin:0;height:100%;background:#000}iframe{position:absolute;top:0;left:0;width:100%;height:100%}</style></head><body><div id='p'></div><script src='https://www.youtube.com/iframe_api'></script><script>var p;function onYouTubeIframeAPIReady(){p=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',playerVars:{playsinline:1,autoplay:1,controls:0,rel:0,modestbranding:1,fs:0,iv_load_policy:3,disablekb:1,origin:'https://it.metro.tube'},events:{onReady:function(){setInterval(function(){if(p&&p.getCurrentTime)Android.tick(p.getCurrentTime(),p.getDuration(),p.getPlayerState())},500)},onStateChange:function(e){Android.state(e.data)}}})}</script></body></html>""",
                 "text/html", "utf-8", null)
         }
-        col.addView(web, LinearLayout.LayoutParams(-1, dp(220)))
         val bar = LinearLayout(this).apply { background = grad(0xFF515151.toInt(), 0xFF424242.toInt()); gravity = Gravity.CENTER_VERTICAL }
-        bar.addView(tv("HQ", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; background = grad(0xFFCB3A2F.toInt(), 0xFFA32A21.toInt(), 3) },
+        bar.addView(tv("HQ", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; background = grad(0xFFCB3A2F.toInt(), 0xFFA32A21.toInt(), 3); hq = this; tilt(this); setOnClickListener { pickQuality() } },
             LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(dp(14), 0, dp(14), 0) })
         val off = 0xFFB4B4B4.toInt(); var rating = "none"
         val likeI = Icon(this, 7, off); val dislikeI = Icon(this, 8, off)
@@ -569,8 +632,8 @@ class MainActivity : Activity() {
             }
         }
         col.addView(tabs); col.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
-        for (i in 0 until col.childCount) if (col.getChildAt(i) !== web) playerRest.add(col.getChildAt(i))
-        playerWeb = web; playerCol = col
+        for (i in 0 until col.childCount) if (col.getChildAt(i) !== box) playerRest.add(col.getChildAt(i))
+        playerWeb = web; playerCol = col; playerBox = box; playerFs = fsB
         show(col); t1.performClick()
     }
 
@@ -805,6 +868,10 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).show()
     }
 
+    private fun clock(sec: Double): String {
+        val t = if (sec.isNaN() || sec < 0) 0 else sec.toInt(); val h = t / 3600; val m = t % 3600 / 60; val x = t % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, x) else "%d:%02d".format(m, x)
+    }
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
     private fun saved(name: String) = try { org.json.JSONArray(prefs.getString(name, "[]")) } catch (e: Exception) { org.json.JSONArray() }
     private fun addSaved(name: String, id: String, t: String, ch: String) {
@@ -944,6 +1011,8 @@ class MainActivity : Activity() {
 class Icon(ctx: android.content.Context, private val k: Int, private val base: Int = Color.WHITE) : View(ctx) {
     companion object { var font: Typeface? = null }
     private var col = base
+    private var alt = false
+    fun setAlt(b: Boolean) { alt = b; invalidate() }
     fun setActive(on: Boolean) { col = if (on) 0xFF2FA8F0.toInt() else base; invalidate() }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bp = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
@@ -1001,6 +1070,12 @@ class Icon(ctx: android.content.Context, private val k: Int, private val base: I
             14 -> {
                 p.color = Color.WHITE; c.drawRoundRect(cx - 30 * u, cy - 22 * u, cx + 30 * u, cy + 22 * u, 6 * u, 6 * u, p)
                 p.color = 0xFFB84731.toInt(); c.drawPath(Path().apply { moveTo(cx - 8 * u, cy - 12 * u); lineTo(cx - 8 * u, cy + 12 * u); lineTo(cx + 14 * u, cy); close() }, p)
+            }
+            16 -> {
+                p.style = Paint.Style.STROKE; p.strokeJoin = Paint.Join.ROUND; p.strokeWidth = 8 * u
+                fun l(a: Float, b: Float, m: Float, n: Float, x: Float, y: Float) { c.drawPath(Path().apply { moveTo(cx + a * u, cy + b * u); lineTo(cx + m * u, cy + n * u); lineTo(cx + x * u, cy + y * u) }, p) }
+                if (!alt) { l(-34f, -12f, -34f, -34f, -12f, -34f); l(12f, -34f, 34f, -34f, 34f, -12f); l(-34f, 12f, -34f, 34f, -12f, 34f); l(12f, 34f, 34f, 34f, 34f, 12f) }
+                else { l(-12f, -34f, -12f, -12f, -34f, -12f); l(12f, -34f, 12f, -12f, 34f, -12f); l(-12f, 34f, -12f, 12f, -34f, 12f); l(12f, 34f, 12f, 12f, 34f, 12f) }
             }
             15 -> { p.color = Color.WHITE; c.drawPath(Path().apply { moveTo(width.toFloat(), height * .1f); lineTo(0f, height / 2f); lineTo(width.toFloat(), height * .9f); close() }, p) }
         }
