@@ -32,6 +32,7 @@ const val API_KEY = "INSERISCI_LA_TUA_CHIAVE"
 // Client OAuth di tipo "TV e dispositivi con input limitato" (Google Cloud Console)
 const val OAUTH_ID = "INSERISCI_CLIENT_ID"
 const val OAUTH_SECRET = "INSERISCI_CLIENT_SECRET"
+const val UA_WEB = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
 
 class MainActivity : Activity() {
     private val DARK = 0xFF222421.toInt(); private val BG = 0xFFEFF3EF.toInt()
@@ -137,6 +138,8 @@ class MainActivity : Activity() {
     private lateinit var scrim: View
     private lateinit var topV: View
     private lateinit var botV: View
+    private lateinit var barMenu: View
+    private var barOpen = false
     private lateinit var logoBox: FrameLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -176,7 +179,7 @@ class MainActivity : Activity() {
         scrim = View(this).apply { visibility = View.GONE; setOnClickListener { toggleDrawer() } }
         stage.addView(scrim, FrameLayout.LayoutParams(dp(60), -1, Gravity.END))
         root.addView(stage, LinearLayout.LayoutParams(-1, 0, 1f))
-        botV = bottomBar(); root.addView(botV, LinearLayout.LayoutParams(-1, dp(64)))
+        botV = bottomBar(); root.addView(botV, LinearLayout.LayoutParams(-1, -2))
         setContentView(root)
         if (signedIn) refreshAccount()
         home()
@@ -251,13 +254,24 @@ class MainActivity : Activity() {
         val b = FrameLayout(this).apply { setBackgroundColor(BOTC) }
         val mid = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         listOf(2 to { home() }, 3 to { cat("Trending", null) }, 4 to { cat("Music", "10") }, 5 to { uploadMenu() }).forEach { (k, a) ->
-            mid.addView(Icon(this, k).apply { tilt(this); setOnClickListener { a() } },
+            mid.addView(Icon(this, k).apply { tilt(this); setOnClickListener { toggleBar(false); a() } },
                 LinearLayout.LayoutParams(dp(50), dp(50)).apply { setMargins(dp(10), 0, dp(10), 0) })
         }
         b.addView(mid, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
-        b.addView(sym("•••", 18f, Color.WHITE).apply { setPadding(dp(8), dp(4), dp(14), dp(8)); setOnClickListener { settings() } },
+        b.addView(sym("•••", 18f, Color.WHITE).apply { setPadding(dp(8), dp(4), dp(14), dp(8)); setOnClickListener { toggleBar() } },
             FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP))
-        return b
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(BOTC) }
+        wrap.addView(b, LinearLayout.LayoutParams(-1, dp(64)))
+        val menu = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        menu.addView(tv("settings", 18f, Color.WHITE).apply { setPadding(dp(24), dp(10), dp(24), dp(16)); tilt(this); setOnClickListener { toggleBar(false); settings() } }, lp(-1, -2))
+        barMenu = menu; wrap.addView(menu, lp(-1, -2))
+        return wrap
+    }
+    private fun toggleBar(open: Boolean = !barOpen) {
+        if (open == barOpen) return
+        barOpen = open
+        (botV.parent as? ViewGroup)?.let { android.transition.TransitionManager.beginDelayedTransition(it) }
+        barMenu.visibility = if (open) View.VISIBLE else View.GONE
     }
     private fun uploadMenu() {
         android.app.AlertDialog.Builder(this).setTitle("Upload a video")
@@ -334,7 +348,7 @@ class MainActivity : Activity() {
             item("Liked videos", 0, 7) { liked() }
         }
         item("History", 0, 11) { localList("History", "history") }
-        item("Watch later", 0, 12) { localList("Watch later", "later") }
+        item("Watch later", 0, 12) { watchLater() }
         head("BEST OF YOUTUBE")
         item("Trending", R.drawable.ic_trending, 0) { cat("Trending", null) }
         item("Music", R.drawable.d_music, 0) { cat("Music", "10") }
@@ -359,6 +373,7 @@ class MainActivity : Activity() {
 
     // ---------- Schermate ----------
     private fun show(v: View, push: Boolean = true) {
+        if (barOpen) toggleBar(false)
         if (!push) { stopPlayer(); stack.clear() }
         stack.add(v); content.removeAllViews(); content.addView(v)
         v.translationX = dp(40).toFloat(); v.alpha = 0f; v.animate().translationX(0f).alpha(1f).setDuration(200).start()
@@ -366,6 +381,7 @@ class MainActivity : Activity() {
     }
     override fun onBackPressed() {
         when {
+            barOpen -> toggleBar(false)
             fsView != null -> chrome.onHideCustomView()
             drawer.visibility == View.VISIBLE -> toggleDrawer()
             stack.size > 1 -> { val r = stack.removeAt(stack.size - 1); if (r === playerCol) stopPlayer(); content.removeAllViews(); content.addView(stack.last()); applyLayout() }
@@ -388,15 +404,11 @@ class MainActivity : Activity() {
             tvs.forEach { it.setTextColor(0xFF999999.toInt()) }; tvs[i].setTextColor(0xFF111111.toInt()); body.removeAllViews()
             if (i == 1) { if (itOn) fillInner(body, "browse", JSONObject().put("browseId", "FEtrending"), true) { fill(body, trendUrl(null), true) } else fill(body, trendUrl(null), true) }
             else if (signedIn) feed(body)
-            else {
-                body.addView(tv("Sign in to see the latest videos from your subscriptions.", 17f, 0xFF333333.toInt()).apply { setPadding(dp(18), dp(18), dp(18), dp(10)) })
-                body.addView(tv("Sign in", 17f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setBackgroundColor(0xFF6B8FE6.toInt()); tilt(this); setOnClickListener { signIn() } },
-                    lp(-1, dp(52)).apply { setMargins(dp(18), 0, dp(18), 0) })
-            }
+            else feedRandom(body)
         }
         tvs.forEachIndexed { i, t -> tabs.addView(t, lp(0, dp(46), 1f)); t.setOnClickListener { pick(i) } }
         col.addView(tabs); col.addView(body)
-        show(sv, false); pick(if (signedIn) 0 else 1)
+        show(sv, false); pick(0)
     }
     private fun cat(name: String, id: String?) = list(name, "Popular videos · $region", trendUrl(id), true)
 
@@ -719,10 +731,13 @@ class MainActivity : Activity() {
     }
 
     // ---------- Rete e login Google (device flow) ----------
-    private fun http(url: String, method: String = "GET", form: String? = null, json: String? = null, auth: Boolean = false): Pair<Int, String> {
+    private fun http(url: String, method: String = "GET", form: String? = null, json: String? = null, auth: Boolean = false, ua: String? = null, cookie: String? = null): Pair<Int, String> {
         val c = URL(url).openConnection() as java.net.HttpURLConnection
         c.requestMethod = method; c.connectTimeout = 15000; c.readTimeout = 20000
         if (url.contains("youtubei.googleapis.com")) c.setRequestProperty("User-Agent", "com.google.android.youtube/$itVer (Linux; U; Android 14) gzip")
+        if (ua != null) c.setRequestProperty("User-Agent", ua)
+        if (cookie != null) c.setRequestProperty("Cookie", cookie)
+        c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
         if (auth) c.setRequestProperty("Authorization", "Bearer " + token())
         val body = form ?: json
         if (body != null || method == "POST") {
@@ -788,7 +803,7 @@ class MainActivity : Activity() {
     private fun signOut() {
         val t = prefs.getString("access", "") ?: ""
         thread { try { http("https://oauth2.googleapis.com/revoke?token=${enc(t)}", "POST") } catch (e: Exception) { } }
-        prefs.edit().remove("access").remove("refresh").remove("exp").apply()
+        prefs.edit().remove("access").remove("refresh").remove("exp").remove("wl").apply()
         meName = ""; meAvatar = ""; meId = ""; likesPl = ""
         fillDrawer(); toast("Signed out"); home()
     }
@@ -819,31 +834,106 @@ class MainActivity : Activity() {
         })
         show(sv); return col
     }
+    private fun vOf(o: JSONObject): V? {
+        val sn = o.optJSONObject("snippet") ?: return null
+        val rid = sn.optJSONObject("resourceId")?.optString("videoId"); val idv = o.opt("id")
+        val id = if (!rid.isNullOrEmpty()) rid else if (idv is JSONObject) idv.optString("videoId") else idv?.toString() ?: ""
+        val t = Html.fromHtml(sn.optString("title"), 0).toString()
+        if (id.isEmpty() || t.isEmpty() || t == "Private video" || t == "Deleted video") return null
+        val ch = sn.optString("videoOwnerChannelTitle").ifEmpty { sn.optString("channelTitle") }
+        val chId = sn.optString("videoOwnerChannelId").ifEmpty { sn.optString("channelId") }
+        val views = o.optJSONObject("statistics")?.optString("viewCount")?.toLongOrNull()?.let { "%,d views".format(it) }
+        val dur = o.optJSONObject("contentDetails")?.optString("duration")?.let { fmt(it) } ?: ""
+        return V(id, t, ch, chId, views, dur, sn.optString("publishedAt"))
+    }
+    private fun addV(col: LinearLayout, v: V) { chOf[v.id] = v.chId; col.addView(row(v.id, v.t, v.ch, v.views, v.dur), lp(-1, -2).apply { topMargin = dp(4) }) }
+    private fun popular(n: Int, cb: (List<V>) -> Unit) {
+        val cats = listOf("10", "17", "20", "23", "24", "1", "22", "25", "26", "28", "19", "15", "2").shuffled().take(n)
+        val out = ArrayList<V>(); var left = cats.size
+        for (c in cats) get(trendUrl(c)) { j ->
+            j?.optJSONArray("items")?.let { a -> for (i in 0 until a.length()) vOf(a.getJSONObject(i))?.let { out.add(it) } }
+            if (--left == 0) cb(out)
+        }
+    }
+    private fun chUploads(cid: String, n: Int, cb: (List<V>) -> Unit) {
+        if (!cid.startsWith("UC")) { cb(emptyList()); return }
+        get("${base}playlistItems?part=snippet&maxResults=$n&playlistId=UU${cid.drop(2)}&key=$key") { j ->
+            val out = ArrayList<V>()
+            j?.optJSONArray("items")?.let { a -> for (i in 0 until a.length()) vOf(a.getJSONObject(i))?.let { out.add(it) } }
+            cb(out)
+        }
+    }
+    // Senza account: video casuali (popolari in categorie scelte a caso)
+    private fun feedRandom(col: LinearLayout) {
+        col.addView(tv("Sign in for a feed based on what you watch and your subscriptions", 14f, BLUE).apply { setPadding(dp(18), dp(12), dp(18), dp(4)); setOnClickListener { signIn() } })
+        val st = tv("Loading…", 16f, 0xFF555555.toInt()).apply { setPadding(dp(18), dp(18), 0, 0) }; col.addView(st)
+        popular(4) { all ->
+            val l = all.distinctBy { it.id }.shuffled().take(30)
+            if (l.isEmpty()) {
+                st.text = if (key.startsWith("INSERISCI")) "Tap here and add your free YouTube API key to start." else "Nothing to show right now."
+                st.setOnClickListener { settings() }; return@popular
+            }
+            col.removeView(st); l.forEach { addV(col, it) }
+        }
+    }
+    // Con account: ultimi video delle iscrizioni + dei canali che guardi + qualche scoperta casuale
     private fun feed(col: LinearLayout) {
         val st = tv("Loading your feed…", 16f, 0xFF555555.toInt()).apply { setPadding(dp(18), dp(18), 0, 0) }; col.addView(st)
+        val all = ArrayList<V>(); val rnd = ArrayList<V>()
+        val hist = saved("history")
+        val hch = (0 until hist.length()).map { hist.getJSONObject(it).optString("h") }.filter { it.isNotEmpty() }.distinct().take(8)
+        var pending = 2 + hch.size
+        fun finish() {
+            val core = all.distinctBy { it.id }.sortedByDescending { it.date }.take(30)
+            val extra = rnd.distinctBy { it.id }.filter { r -> core.none { it.id == r.id } }.shuffled().take(8)
+            if (core.isEmpty() && extra.isEmpty()) {
+                st.text = if (key.startsWith("INSERISCI")) "Tap here and add your free YouTube API key to start." else "Nothing to show yet. Subscribe to channels or watch some videos."
+                st.setOnClickListener { settings() }; return
+            }
+            col.removeView(st); var e = 0
+            core.forEachIndexed { i, v -> addV(col, v); if ((i + 1) % 4 == 0 && e < extra.size) addV(col, extra[e++]) }
+            while (core.isEmpty() && e < extra.size) addV(col, extra[e++])
+        }
+        fun done() { if (--pending == 0) finish() }
         getA("${base}subscriptions?part=snippet&mine=true&maxResults=25&order=relevance") { j ->
             val a = j?.optJSONArray("items")
-            if (a == null) { st.text = "Could not load your subscriptions."; return@getA }
-            if (a.length() == 0) { st.text = "Subscribe to channels to fill your feed."; return@getA }
-            val all = ArrayList<JSONObject>(); var left = a.length()
-            for (i in 0 until a.length()) {
-                val cid = a.getJSONObject(i).getJSONObject("snippet").getJSONObject("resourceId").getString("channelId")
-                get("${base}playlistItems?part=snippet&maxResults=3&playlistId=UU${cid.drop(2)}&key=$key") { r ->
-                    r?.optJSONArray("items")?.let { for (n in 0 until it.length()) all.add(it.getJSONObject(n).getJSONObject("snippet")) }
-                    if (--left == 0) {
-                        col.removeView(st); all.sortByDescending { it.optString("publishedAt") }
-                        for (sn in all.take(40)) {
-                            val id = sn.getJSONObject("resourceId").getString("videoId"); val t = sn.getString("title")
-                            if (t == "Private video" || t == "Deleted video") continue
-                            val ch = sn.optString("videoOwnerChannelTitle").ifEmpty { sn.optString("channelTitle") }
-                            chOf[id] = sn.optString("videoOwnerChannelId").ifEmpty { sn.optString("channelId") }
-                            col.addView(row(id, t, ch, null), lp(-1, -2).apply { topMargin = dp(4) })
-                        }
-                    }
+            if (a != null) {
+                pending += a.length()
+                for (i in 0 until a.length()) {
+                    val cid = a.getJSONObject(i).getJSONObject("snippet").getJSONObject("resourceId").getString("channelId")
+                    chUploads(cid, 3) { all.addAll(it); done() }
                 }
+            }
+            done()
+        }
+        for (c in hch) chUploads(c, 2) { all.addAll(it); done() }
+        popular(2) { rnd.addAll(it); done() }
+    }
+    // "Guarda più tardi" sincronizzato: playlist privata dell'account, visibile anche nell'app ufficiale
+    private var wlId: String
+        get() = prefs.getString("wl", "")!!
+        set(v) { prefs.edit().putString("wl", v).apply() }
+    private fun withWl(cb: (String?) -> Unit) {
+        if (wlId.isNotEmpty()) { cb(wlId); return }
+        getA("${base}playlists?part=snippet&mine=true&maxResults=50") { j ->
+            val a = j?.optJSONArray("items")
+            if (a == null) { cb(null); return@getA }
+            var id = ""
+            for (i in 0 until a.length()) { val o = a.getJSONObject(i); if (o.getJSONObject("snippet").getString("title") == "Watch later (WpTube)") id = o.getString("id") }
+            if (id.isNotEmpty()) { wlId = id; cb(id); return@getA }
+            api("${base}playlists?part=snippet,status", "POST", """{"snippet":{"title":"Watch later (WpTube)","description":"Created by WpTube"},"status":{"privacyStatus":"private"}}""") { c, r ->
+                if (c in 200..299 && r != null) { wlId = r.optString("id"); cb(wlId) } else cb(null)
             }
         }
     }
+    private fun watchLater() {
+        if (!signedIn) { localList("Watch later", "later"); return }
+        withWl { pid ->
+            if (pid == null) toast("Could not open Watch later")
+            else list("Watch later", "synced with your account", "${base}playlistItems?part=snippet&maxResults=50&playlistId=$pid", false, auth = true)
+        }
+    }
+
     private fun subscriptions() {
         val col = page("Subscriptions", "")
         getA("${base}subscriptions?part=snippet&mine=true&maxResults=50&order=alphabetical") { j ->
@@ -865,10 +955,16 @@ class MainActivity : Activity() {
         list("Liked videos", "", "${base}playlistItems?part=snippet&maxResults=50&playlistId=$likesPl", false, auth = true)
     }
     private fun plusMenu(id: String, t: String, ch: String) {
-        val names = arrayListOf("Watch later (this device)"); val ids = arrayListOf("")
+        val names = arrayListOf(if (signedIn) "Watch later" else "Watch later (this device)"); val ids = arrayListOf("")
         fun showIt() {
             android.app.AlertDialog.Builder(this).setTitle("Add to").setItems(names.toTypedArray()) { _, w ->
-                if (w == 0) { addSaved("later", id, t, ch); toast("Added to Watch later") }
+                if (w == 0) {
+                    if (!signedIn) { addSaved("later", id, t, ch); toast("Added to Watch later") }
+                    else withWl { pid ->
+                        if (pid == null) toast("Could not add")
+                        else api("${base}playlistItems?part=snippet", "POST", """{"snippet":{"playlistId":"$pid","resourceId":{"kind":"youtube#video","videoId":"$id"}}}""") { c, _ -> toast(if (c in 200..299) "Added to Watch later" else "Could not add") }
+                    }
+                }
                 else api("${base}playlistItems?part=snippet", "POST", """{"snippet":{"playlistId":"${ids[w]}","resourceId":{"kind":"youtube#video","videoId":"$id"}}}""") { c, _ -> toast(if (c in 200..299) "Added" else "Could not add") }
             }.show()
         }
@@ -884,13 +980,32 @@ class MainActivity : Activity() {
     private val itName get() = prefs.getString("itn", "")!!.ifEmpty { "ANDROID" }
     private val itVer get() = prefs.getString("itv", "")!!.ifEmpty { "21.41.525" }
     private val itKey get() = prefs.getString("itk", "")!!
+    // Chiave e versione del client web ricavate dalla home di YouTube (come fa innertube-sdk); se la chiave è rifiutata (400) si ricaricano e si riprova una volta
+    private var itScrapedKey = ""; private var itScrapedVer = ""
+    private fun itScrape(force: Boolean) {
+        if (!force && itScrapedKey.isNotEmpty()) return
+        try {
+            val html = http("https://www.youtube.com/", "GET", ua = UA_WEB, cookie = "SOCS=CAI; CONSENT=YES+1").second
+            Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"").find(html)?.let { itScrapedKey = it.groupValues[1] }
+            Regex("\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"([^\"]+)\"").find(html)?.let { itScrapedVer = it.groupValues[1] }
+        } catch (e: Exception) { }
+    }
+    // /player usa il contesto Android, /next /browse /search usano il contesto Web
     private fun inner(ep: String, extra: JSONObject, cb: (JSONObject?) -> Unit) = thread {
-        val cl = JSONObject().put("clientName", itName).put("clientVersion", itVer).put("hl", "en").put("gl", region)
-        if (itName == "ANDROID") cl.put("androidSdkVersion", 34)
-        val body = JSONObject().put("context", JSONObject().put("client", cl))
-        for (k in extra.keys()) body.put(k, extra.get(k))
-        val url = "https://youtubei.googleapis.com/youtubei/v1/$ep?prettyPrint=false" + (if (itKey.isEmpty()) "" else "&key=" + enc(itKey))
-        val r = try { val (c, t) = http(url, "POST", json = body.toString()); if (c in 200..299) JSONObject(t) else null } catch (e: Exception) { null }
+        val android = ep == "player"; var r: JSONObject? = null
+        for (attempt in 0..1) {
+            if (itKey.isEmpty()) itScrape(attempt == 1)
+            val k = if (itKey.isNotEmpty()) itKey else itScrapedKey
+            val cl = JSONObject().put("hl", "en").put("gl", region)
+            if (android) { cl.put("clientName", itName).put("clientVersion", itVer); if (itName == "ANDROID") cl.put("androidSdkVersion", 34) }
+            else cl.put("clientName", "WEB").put("clientVersion", itScrapedVer.ifEmpty { "2.20250101.00.00" })
+            val body = JSONObject().put("context", JSONObject().put("client", cl))
+            for (n in extra.keys()) body.put(n, extra.get(n))
+            val url = "https://youtubei.googleapis.com/youtubei/v1/$ep?prettyPrint=false" + (if (k.isEmpty()) "" else "&key=" + enc(k))
+            val (c, t) = try { http(url, "POST", json = body.toString(), ua = if (android) null else UA_WEB) } catch (e: Exception) { -1 to "" }
+            if (c in 200..299) { r = try { JSONObject(t) } catch (e: Exception) { null }; break }
+            if (c != 400) break
+        }
         ui.post { cb(r) }
     }
     private fun txt(o: JSONObject?): String {
@@ -1023,7 +1138,7 @@ class MainActivity : Activity() {
         }
         info.addView(name); info.addView(sb, lp(-2, -2).apply { topMargin = dp(8) })
         head.addView(info, lp(0, -2, 1f)); col.addView(head)
-        var uploads = ""; var about = ""
+        var uploads = ""; var about = ""; var useInner = false
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val tabs = LinearLayout(this)
         val tvs = listOf("Videos", "Playlists", "About").map { n ->
@@ -1031,14 +1146,19 @@ class MainActivity : Activity() {
         }
         fun pick(i: Int) {
             tvs.forEach { it.setTextColor(0xFF999999.toInt()) }; tvs[i].setTextColor(0xFF111111.toInt()); body.removeAllViews()
-            if (i == 0) { if (uploads.isNotEmpty()) fill(body, "${base}playlistItems?part=snippet&maxResults=30&playlistId=$uploads&key=$key", false) }
+            if (i == 0) {
+                if (uploads.isNotEmpty()) {
+                    if (useInner) fillInner(body, "browse", JSONObject().put("browseId", "VL$uploads"), false) { fill(body, "${base}playlistItems?part=snippet&maxResults=30&playlistId=$uploads&key=$key", false) }
+                    else fill(body, "${base}playlistItems?part=snippet&maxResults=30&playlistId=$uploads&key=$key", false)
+                }
+            }
             else if (i == 1) playlists(body, "${base}playlists?part=snippet,contentDetails&maxResults=25&channelId=$cid&key=$key")
             else body.addView(tv(about, 16f, 0xFF333333.toInt()).apply { setPadding(dp(16), dp(14), dp(16), dp(14)) })
         }
         tvs.forEachIndexed { i, t -> tabs.addView(t, lp(0, dp(46), 1f)); t.setOnClickListener { pick(i) } }
         col.addView(tabs); col.addView(body)
         show(sv)
-        get("${base}channels?part=snippet,statistics,contentDetails,brandingSettings&id=$cid&key=$key") { j ->
+        fun loadApiChannel() = get("${base}channels?part=snippet,statistics,contentDetails,brandingSettings&id=$cid&key=$key") { j ->
             val ch = j?.optJSONArray("items")?.optJSONObject(0) ?: run { name.text = "Channel unavailable"; return@get }
             val sn = ch.getJSONObject("snippet"); val st = ch.optJSONObject("statistics")
             name.text = sn.getString("title")
@@ -1052,6 +1172,14 @@ class MainActivity : Activity() {
                 "%,d videos".format(st?.optString("videoCount")?.toLongOrNull() ?: 0L) + "\nJoined " + sn.optString("publishedAt").take(10)
             pick(0)
         }
+        if (itOn) inner("browse", JSONObject().put("browseId", cid)) { j ->
+            val m = j?.optJSONObject("metadata")?.optJSONObject("channelMetadataRenderer")
+            if (m == null || m.optString("title").isEmpty()) { loadApiChannel(); return@inner }
+            name.text = m.optString("title"); about = m.optString("description").ifEmpty { "No description." }
+            m.optJSONObject("avatar")?.optJSONArray("thumbnails")?.optJSONObject(0)?.optString("url")?.takeIf { it.startsWith("http") }?.let { load(av, it) }
+            if (meId.isNotEmpty() && cid == meId) { subRed.visibility = View.GONE; subLbl.visibility = View.GONE; subTail.visibility = View.GONE; sb.setOnClickListener(null); sb.isClickable = false }
+            uploads = "UU${cid.drop(2)}"; useInner = true; pick(0)
+        } else loadApiChannel()
     }
 
     private fun settings() {
@@ -1070,7 +1198,7 @@ class MainActivity : Activity() {
         row("Account", { if (signedIn) "Sign out" else "Sign in" }) { if (signedIn) signOut() else signIn() }
         row("OAuth client", { if (clientId.startsWith("INSERISCI")) "Not set" else "Set" }) { v -> askOauth { v.text = if (clientId.startsWith("INSERISCI")) "Not set" else "Set" } }
         row("Safe Search", { if (safe) "On" else "Off" }) { safe = !safe }
-        row("Source", { if (itOn) "Innertube" else "Data API" }) { prefs.edit().putString("src", if (itOn) "api" else "inner").apply() }
+        row("Source", { if (itOn) "Innertube SDK" else "Data API" }) { prefs.edit().putString("src", if (itOn) "api" else "inner").apply() }
         row("Innertube client", { "$itName $itVer" }) { v -> askInner { v.text = "$itName $itVer" } }
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0" } catch (e: Exception) { "1.0" }
         row("Version", { ver }) { }
@@ -1079,6 +1207,8 @@ class MainActivity : Activity() {
         show(col)
     }
 }
+
+data class V(val id: String, val t: String, val ch: String, val chId: String, val views: String?, val dur: String, val date: String)
 
 class Icon(ctx: android.content.Context, private val k: Int, private val base: Int = Color.WHITE) : View(ctx) {
     companion object { var font: Typeface? = null }
