@@ -5,7 +5,9 @@ import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.os.*
 import android.text.Html
+import android.text.Editable
 import android.text.TextUtils
+import android.text.TextWatcher
 import android.text.format.DateUtils
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -83,7 +85,7 @@ class MainActivity : Activity() {
     // Apre i link youtu.be, youtube.com, www.youtube.com, m.youtube.com
     private fun openLink(u: Uri) {
         val host = (u.host ?: "").removePrefix("www.").removePrefix("m."); val seg = u.pathSegments
-        fun video(id: String) = get("${base}videos?part=snippet,statistics&id=${enc(id)}&key=$key") { j ->
+        fun videoApi(id: String) = get("${base}videos?part=snippet,statistics&id=${enc(id)}&key=$key") { j ->
             val o = j?.optJSONArray("items")?.optJSONObject(0)
             if (o == null) { toast("Video not found"); return@get }
             val sn = o.getJSONObject("snippet"); chOf[id] = sn.optString("channelId")
@@ -92,6 +94,14 @@ class MainActivity : Activity() {
         }
         fun resolve(q: String) = get("${base}channels?part=id&$q&key=$key") { j ->
             j?.optJSONArray("items")?.optJSONObject(0)?.optString("id")?.takeIf { it.isNotEmpty() }?.let { channel(it) } ?: toast("Channel not found")
+        }
+        fun video(id: String) {
+            if (!itOn) { videoApi(id); return }
+            inner("player", JSONObject().put("videoId", id)) { j ->
+                val d = j?.optJSONObject("videoDetails")
+                if (d == null || d.optString("title").isEmpty()) videoApi(id)
+                else { chOf[id] = d.optString("channelId"); player(id, d.optString("title"), d.optString("author"), d.optString("viewCount").toLongOrNull()?.let { "%,d views".format(it) }) }
+            }
         }
         val v = u.getQueryParameter("v"); val pl = u.getQueryParameter("list")
         when {
@@ -182,19 +192,53 @@ class MainActivity : Activity() {
         b.addView(View(this).apply { setBackgroundColor(0xFF323232.toInt()) }, FrameLayout.LayoutParams(-1, dp(1), Gravity.BOTTOM))
         return b
     }
+    private var suggBox: LinearLayout? = null
+    private var suggTask: Runnable? = null
+    private fun hideSuggestions() {
+        suggTask?.let { ui.removeCallbacks(it) }; suggTask = null
+        suggBox?.let { (it.parent as? ViewGroup)?.removeView(it) }; suggBox = null
+    }
+    // Suggerimenti di ricerca: https://suggestqueries.google.com/complete/search?ds=yt&oe=UTF-8
+    private fun suggest(q: String, pick: (String) -> Unit) {
+        suggTask?.let { ui.removeCallbacks(it) }
+        if (q.isBlank()) { hideSuggestions(); return }
+        val t = Runnable {
+            thread {
+                val arr = try {
+                    org.json.JSONArray(URL("https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&oe=UTF-8&q=${enc(q)}").readText()).getJSONArray(1)
+                } catch (e: Exception) { null }
+                ui.post {
+                    if (arr == null || arr.length() == 0 || logoBox.getChildAt(0) !is EditText) return@post
+                    hideSuggestions()
+                    val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
+                    for (i in 0 until minOf(arr.length(), 8)) {
+                        val sg = arr.getString(i)
+                        box.addView(tv(sg, 17f, 0xFF222222.toInt()).apply { setPadding(dp(18), dp(12), dp(18), dp(12)); tilt(this); setOnClickListener { pick(sg) } }, lp(-1, -2))
+                        box.addView(View(this).apply { setBackgroundColor(0xFFE2E2E2.toInt()) }, lp(-1, dp(1)))
+                    }
+                    suggBox = box; content.addView(box, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+                }
+            }
+        }
+        suggTask = t; ui.postDelayed(t, 250)
+    }
     private fun openSearch() {
+        fun go(q: String, v: View?) {
+            if (q.isEmpty()) return
+            hideSuggestions()
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow((v ?: logoBox).windowToken, 0)
+            list("Search", "\"$q\"", "${base}search?part=snippet&type=video&maxResults=25&q=${enc(q)}&regionCode=$region&safeSearch=${if (safe) "strict" else "none"}&key=$key", false, inner = "search" to JSONObject().put("query", q))
+            logoBox.removeAllViews(); logoBox.addView(logo())
+        }
         val e = EditText(this).apply {
             hint = "Search"; typeface = fText; setTextColor(Color.WHITE); setHintTextColor(0xFF888888.toInt()); setSingleLine()
             imeOptions = EditorInfo.IME_ACTION_SEARCH
-            setOnEditorActionListener { v, _, _ ->
-                val q = v.text.toString().trim()
-                if (q.isNotEmpty()) {
-                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(v.windowToken, 0)
-                    list("Search", "\"$q\"", "${base}search?part=snippet&type=video&maxResults=25&q=${enc(q)}&regionCode=$region&safeSearch=${if (safe) "strict" else "none"}&key=$key", false)
-                    logoBox.removeAllViews(); logoBox.addView(logo())
-                }
-                true
-            }
+            setOnEditorActionListener { v, _, _ -> go(v.text.toString().trim(), v); true }
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) { suggest(s?.toString()?.trim() ?: "") { q -> go(q, this@apply) } }
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            })
         }
         logoBox.removeAllViews(); logoBox.addView(e, FrameLayout.LayoutParams(-1, -1)); e.requestFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(e, 0)
@@ -338,7 +382,7 @@ class MainActivity : Activity() {
         }
         fun pick(i: Int) {
             tvs.forEach { it.setTextColor(0xFF999999.toInt()) }; tvs[i].setTextColor(0xFF111111.toInt()); body.removeAllViews()
-            if (i == 1) fill(body, trendUrl(null), true)
+            if (i == 1) { if (itOn) fillInner(body, "browse", JSONObject().put("browseId", "FEtrending"), true) { fill(body, trendUrl(null), true) } else fill(body, trendUrl(null), true) }
             else if (signedIn) feed(body)
             else {
                 body.addView(tv("Sign in to see the latest videos from your subscriptions.", 17f, 0xFF333333.toInt()).apply { setPadding(dp(18), dp(18), dp(18), dp(10)) })
@@ -352,7 +396,7 @@ class MainActivity : Activity() {
     }
     private fun cat(name: String, id: String?) = list(name, "Popular videos · $region", trendUrl(id), true)
 
-    private fun list(title: String, sub: String, url: String, featured: Boolean, push: Boolean = true, auth: Boolean = false) {
+    private fun list(title: String, sub: String, url: String, featured: Boolean, push: Boolean = true, auth: Boolean = false, inner: Pair<String, JSONObject>? = null) {
         val sv = ScrollView(this); val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         sv.addView(col)
         col.addView(LinearLayout(this).apply {
@@ -360,7 +404,7 @@ class MainActivity : Activity() {
             addView(tv(title, 22f, Color.WHITE, true)); addView(tv(sub, 15f, 0xFFCCCCCC.toInt()))
         })
         show(sv, push)
-        fill(col, url, featured, auth)
+        if (inner != null && itOn) fillInner(col, inner.first, inner.second, featured) { fill(col, url, featured, auth) } else fill(col, url, featured, auth)
     }
     private fun fill(col: LinearLayout, url: String, featured: Boolean, auth: Boolean = false) {
         val status = tv("Loading…", 16f, 0xFF555555.toInt()).apply { setPadding(dp(18), dp(18), 0, 0) }
@@ -467,8 +511,10 @@ class MainActivity : Activity() {
         val t1 = tab("Suggested Videos"); val t2 = tab("Comments")
         tabs.addView(t1, LinearLayout.LayoutParams(0, dp(48), 1f)); tabs.addView(t2, LinearLayout.LayoutParams(0, dp(48), 1f))
         fun sel(a: TextView, b: TextView) { a.setTextColor(0xFF111111.toInt()); b.setTextColor(0xFF999999.toInt()) }
+        var suggFallback = false
         t1.setOnClickListener {
             sel(t1, t2); body.removeAllViews()
+            if (itOn && !suggFallback) { fillInner(body, "next", JSONObject().put("videoId", id), false) { suggFallback = true; t1.performClick(); suggFallback = false }; return@setOnClickListener }
             get("${base}search?part=snippet&type=video&maxResults=15&q=${enc(title)}&key=$key") { j ->
                 val a = j?.optJSONArray("items") ?: return@get
                 for (i in 0 until a.length()) {
@@ -541,6 +587,7 @@ class MainActivity : Activity() {
     private fun http(url: String, method: String = "GET", form: String? = null, json: String? = null, auth: Boolean = false): Pair<Int, String> {
         val c = URL(url).openConnection() as java.net.HttpURLConnection
         c.requestMethod = method; c.connectTimeout = 15000; c.readTimeout = 20000
+        if (url.contains("youtubei.googleapis.com")) c.setRequestProperty("User-Agent", "com.google.android.youtube/$itVer (Linux; U; Android 14) gzip")
         if (auth) c.setRequestProperty("Authorization", "Bearer " + token())
         val body = form ?: json
         if (body != null || method == "POST") {
@@ -697,6 +744,67 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------- Innertube (solo metadati: ricerca, correlati, trending, info video; la riproduzione resta sul player incorporato) ----------
+    private val itOn get() = prefs.getString("src", "api") == "inner"
+    private val itName get() = prefs.getString("itn", "")!!.ifEmpty { "ANDROID" }
+    private val itVer get() = prefs.getString("itv", "")!!.ifEmpty { "21.41.525" }
+    private val itKey get() = prefs.getString("itk", "")!!
+    private fun inner(ep: String, extra: JSONObject, cb: (JSONObject?) -> Unit) = thread {
+        val cl = JSONObject().put("clientName", itName).put("clientVersion", itVer).put("hl", "en").put("gl", region)
+        if (itName == "ANDROID") cl.put("androidSdkVersion", 34)
+        val body = JSONObject().put("context", JSONObject().put("client", cl))
+        for (k in extra.keys()) body.put(k, extra.get(k))
+        val url = "https://youtubei.googleapis.com/youtubei/v1/$ep?prettyPrint=false" + (if (itKey.isEmpty()) "" else "&key=" + enc(itKey))
+        val r = try { val (c, t) = http(url, "POST", json = body.toString()); if (c in 200..299) JSONObject(t) else null } catch (e: Exception) { null }
+        ui.post { cb(r) }
+    }
+    private fun txt(o: JSONObject?): String {
+        if (o == null) return ""
+        val st = o.optString("simpleText"); if (st.isNotEmpty()) return st
+        val r = o.optJSONArray("runs") ?: return o.optString("content")
+        return (0 until r.length()).joinToString("") { r.getJSONObject(it).optString("text") }
+    }
+    private fun findVideos(n: Any?, out: ArrayList<JSONObject>) {
+        when (n) {
+            is JSONObject -> {
+                if ((n.has("videoId") && n.has("title") && (n.has("thumbnail") || n.has("lengthText"))) || (n.optString("contentType") == "LOCKUP_CONTENT_TYPE_VIDEO" && n.has("contentId"))) out.add(n)
+                else for (k in n.keys()) findVideos(n.opt(k), out)
+            }
+            is org.json.JSONArray -> for (i in 0 until n.length()) findVideos(n.opt(i), out)
+        }
+    }
+    private fun fillInner(col: LinearLayout, ep: String, extra: JSONObject, featured: Boolean, fallback: (() -> Unit)? = null) {
+        val status = tv("Loading…", 16f, 0xFF555555.toInt()).apply { setPadding(dp(18), dp(18), 0, 0) }; col.addView(status)
+        inner(ep, extra) { j ->
+            val found = ArrayList<JSONObject>(); findVideos(j, found)
+            val seen = HashSet<String>(); var n = 0
+            col.removeView(status)
+            for (o in found) {
+                val id = o.optString("videoId").ifEmpty { o.optString("contentId") }
+                if (id.isEmpty() || !seen.add(id)) continue
+                val t = txt(o.optJSONObject("title")).ifEmpty { txt(o.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")?.optJSONObject("title")) }
+                if (t.isEmpty()) continue
+                val by = o.optJSONObject("shortBylineText") ?: o.optJSONObject("longBylineText") ?: o.optJSONObject("ownerText")
+                chOf[id] = by?.optJSONArray("runs")?.optJSONObject(0)?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
+                val views = txt(o.optJSONObject("viewCountText")).ifEmpty { txt(o.optJSONObject("shortViewCountText")) }.ifEmpty { null }
+                val dur = txt(o.optJSONObject("lengthText"))
+                val first = n == 0 && featured
+                col.addView(if (first) banner(id, t, txt(by), views, dur) else row(id, t, txt(by), views, dur), lp(-1, -2).apply { if (!first) topMargin = dp(4) })
+                n++
+            }
+            if (n == 0) { if (fallback != null) fallback() else col.addView(tv("No results", 16f, 0xFF555555.toInt()).apply { setPadding(dp(18), dp(18), 0, 0) }) }
+        }
+    }
+    private fun askInner(done: () -> Unit) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0) }
+        fun field(h: String, k: String) = EditText(this).apply { hint = h; setSingleLine(); setText(prefs.getString(k, "")); box.addView(this) }
+        val a = field("Client name (default ANDROID)", "itn"); val b = field("Client version (default 21.41.525)", "itv"); val c = field("API key (optional)", "itk")
+        android.app.AlertDialog.Builder(this).setTitle("Innertube client").setView(box)
+            .setPositiveButton("Save") { _, _ ->
+                prefs.edit().putString("itn", a.text.toString().trim()).putString("itv", b.text.toString().trim()).putString("itk", c.text.toString().trim()).apply(); done()
+            }.setNegativeButton("Cancel", null).show()
+    }
+
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
     private fun saved(name: String) = try { org.json.JSONArray(prefs.getString(name, "[]")) } catch (e: Exception) { org.json.JSONArray() }
     private fun addSaved(name: String, id: String, t: String, ch: String) {
@@ -823,6 +931,8 @@ class MainActivity : Activity() {
         row("Account", { if (signedIn) "Sign out" else "Sign in" }) { if (signedIn) signOut() else signIn() }
         row("OAuth client", { if (clientId.startsWith("INSERISCI")) "Not set" else "Set" }) { v -> askOauth { v.text = if (clientId.startsWith("INSERISCI")) "Not set" else "Set" } }
         row("Safe Search", { if (safe) "On" else "Off" }) { safe = !safe }
+        row("Source", { if (itOn) "Innertube" else "Data API" }) { prefs.edit().putString("src", if (itOn) "api" else "inner").apply() }
+        row("Innertube client", { "$itName $itVer" }) { v -> askInner { v.text = "$itName $itVer" } }
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0" } catch (e: Exception) { "1.0" }
         row("Version", { ver }) { }
         row("Developer", { "Blaze Inc." }) { }
